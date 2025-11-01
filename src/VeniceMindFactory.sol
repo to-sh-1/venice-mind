@@ -95,7 +95,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         vvvToken = _vvvToken;
 
         // Deploy the implementation contract
-        mindImplementation = new VeniceMindBurn(_vvvToken, address(this));
+        mindImplementation = new VeniceMind(_vvvToken, address(this));
     }
 
     /**
@@ -120,7 +120,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
 
         // Initialize the clone with the factory as owner initially
         // The factory owner (Venice) can later transfer ownership to multisigs
-        VeniceMindBurn(mindAddress).transferOwnership(address(this));
+        VeniceMind(mindAddress).transferOwnership(address(this));
 
         // Store mind information
         minds[mindId] = MindInfo({
@@ -148,7 +148,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         MindInfo storage mind = minds[mindId];
         require(mind.mindAddress != address(0), "Mind does not exist");
 
-        VeniceMindBurn mindContract = VeniceMindBurn(mind.mindAddress);
+        VeniceMind mindContract = VeniceMind(mind.mindAddress);
 
         // Get the current balance before burning
         uint256 balanceBefore = mindContract.getVVVBalance();
@@ -177,7 +177,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
             uint256 mindId = mindIds[i];
             MindInfo storage mind = minds[mindId];
 
-            VeniceMindBurn mindContract = VeniceMindBurn(mind.mindAddress);
+            VeniceMind mindContract = VeniceMind(mind.mindAddress);
             uint256 balanceBefore = mindContract.getVVVBalance();
 
             if (balanceBefore > 0) {
@@ -263,7 +263,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     ) external view returns (uint256 total) {
         for (uint256 i = 0; i < mindIds.length; i++) {
             uint256 mindId = mindIds[i];
-            VeniceMindBurn mindContract = VeniceMindBurn(
+            VeniceMind mindContract = VeniceMind(
                 minds[mindId].mindAddress
             );
             total += mindContract.burnedBy(contributor);
@@ -277,7 +277,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
      */
     function getMindVVVBalance(uint256 mindId) external view returns (uint256) {
         require(minds[mindId].mindAddress != address(0), "Mind does not exist");
-        VeniceMindBurn mindContract = VeniceMindBurn(minds[mindId].mindAddress);
+        VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
         return mindContract.getVVVBalance();
     }
 
@@ -288,7 +288,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     function getTotalVVVBalance() external view returns (uint256 total) {
         for (uint256 i = 0; i < mindIds.length; i++) {
             uint256 mindId = mindIds[i];
-            VeniceMindBurn mindContract = VeniceMindBurn(
+            VeniceMind mindContract = VeniceMind(
                 minds[mindId].mindAddress
             );
             total += mindContract.getVVVBalance();
@@ -308,7 +308,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         require(minds[mindId].mindAddress != address(0), "Mind does not exist");
         require(newOwner != address(0), "New owner cannot be zero address");
 
-        VeniceMindBurn mindContract = VeniceMindBurn(minds[mindId].mindAddress);
+        VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
         mindContract.transferOwnership(newOwner);
     }
 
@@ -325,7 +325,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         address to
     ) external onlyOwner {
         require(minds[mindId].mindAddress != address(0), "Mind does not exist");
-        VeniceMindBurn mindContract = VeniceMindBurn(minds[mindId].mindAddress);
+        VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
         mindContract.emergencyWithdraw(token, to);
     }
 }

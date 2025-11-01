@@ -1,0 +1,234 @@
+# Cursor Rules for Solidity Development
+
+## CRITICAL: Do Not Modify Code Without Explicit Request
+
+### Golden Rules
+
+1. **NEVER modify code that the user hasn't explicitly asked you to change**
+2. **NEVER refactor or "improve" code unless explicitly requested**
+3. **NEVER change variable names, function signatures, or contract structure without permission**
+4. **NEVER add features or functionality unless explicitly asked**
+5. **ALWAYS ask for confirmation before making non-trivial changes**
+
+### When User Requests Changes
+
+- Make ONLY the specific changes requested
+- Do not add "improvements" or "optimizations" unless asked
+- Do not change unrelated code
+- Preserve existing patterns and style
+- Do not reformat code unless explicitly requested
+
+## Solidity Best Practices
+
+### Code Style
+
+- Use Solidity ^0.8.24 or as specified in foundry.toml
+- Follow OpenZeppelin coding standards
+- Use 4 spaces for indentation (no tabs)
+- Maximum line length: 120 characters
+- Use camelCase for variables and functions
+- Use PascalCase for contracts, structs, events, and errors
+- Use UPPER_SNAKE_CASE for constants
+
+### Documentation
+
+- Always use NatSpec comments for all public/external functions
+- Include @param and @return tags
+- Document complex logic with inline comments
+- Include @notice, @dev, and @param in events
+
+### Security Practices
+
+- Always use reentrancy guards on external functions that handle tokens/ETH
+- Use SafeERC20 for all ERC20 token transfers
+- Validate all input parameters (zero address, zero value checks)
+- Use custom errors instead of require strings for gas efficiency (Solidity 0.8.4+)
+- Prefer checks-effects-interactions pattern
+- Never trust external calls - always validate state after
+
+### Access Control
+
+- Use OpenZeppelin's Ownable or AccessControl for access control
+- Add access control checks at function entry
+- Emit events for ownership transfers
+- Consider using roles instead of single owner for complex systems
+
+### Gas Optimization
+
+- Use `immutable` for values set once in constructor
+- Use `constant` for compile-time constants
+- Pack structs efficiently (up to 32 bytes)
+- Use custom errors instead of require strings
+- Cache storage reads in loops
+- Use events instead of storage for historical data when possible
+- Consider using mappings instead of arrays for lookups
+
+### Error Handling
+
+- Use custom errors for gas efficiency
+- Include descriptive error messages in custom errors
+- Use require for user errors (with custom errors)
+- Use revert for internal errors
+- Never use assert() (only for invariants that should never fail)
+
+### Testing Requirements
+
+- Write tests for all public/external functions
+- Test both success and failure cases
+- Include edge cases (zero values, max values, boundary conditions)
+- Use fuzz testing for numeric inputs
+- Test access control violations
+- Test reentrancy scenarios
+- Use Foundry's invariant testing where appropriate
+
+### Import Organization
+
+1. SPDX License Identifier (if not in template)
+2. Pragma statement
+3. Standard library imports (forge-std)
+4. OpenZeppelin imports (grouped by category)
+5. Local imports (relative paths)
+
+Example:
+
+```solidity
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import {Test, console} from "forge-std/Test.sol";
+import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+
+import {VeniceMindBurn} from "../src/VeniceMindBurn.sol";
+```
+
+## Project-Specific Rules
+
+### Contract Structure
+
+- Contracts in `src/` directory
+- Tests in `test/` directory with `.t.sol` extension
+- Scripts in `script/` directory with `.s.sol` extension
+- Use minimal proxy clones for gas efficiency where applicable
+- Factory pattern for contract creation
+
+### Naming Conventions
+
+- Test files: `ContractName.t.sol`
+- Script files: `Action.s.sol` (e.g., `Deploy.s.sol`)
+- Test functions: `testFunctionName()` or `testFuzzFunctionName()`
+- Setup function: `setUp()`
+
+### Events
+
+- Emit events for all state-changing operations
+- Use indexed parameters (up to 3) for efficient filtering
+- Include all relevant data in events
+- Use clear, descriptive event names
+
+### State Variables
+
+- Group related variables together
+- Place immutable/constant variables first
+- Use private/internal for variables that don't need to be public
+- Document complex state variables
+
+### Functions
+
+- Order: constructor, receive/fallback, external, public, internal, private
+- Group functions by functionality
+- Keep functions focused on single responsibility
+- Extract complex logic into internal functions
+- Use view/pure modifiers appropriately
+
+## Testing Guidelines
+
+### Test Structure
+
+```solidity
+contract ContractTest is Test {
+    // State variables
+    Contract public contract;
+    address public owner;
+    address public user;
+
+    function setUp() public {
+        // Setup
+    }
+
+    function testFunctionName() public {
+        // Test implementation
+    }
+
+    function testFuzzFunctionName(uint256 input) public {
+        // Fuzz test
+    }
+}
+```
+
+### Test Best Practices
+
+- Use descriptive test names
+- Arrange-Act-Assert pattern
+- Test one thing per test function
+- Use vm.expectRevert() for failure cases
+- Use vm.expectEmit() for event testing
+- Use fuzzing for numeric inputs
+- Test boundary conditions
+
+## Common Patterns to Follow
+
+### Safe Token Transfers
+
+```solidity
+using SafeERC20 for IERC20;
+IERC20(token).safeTransfer(to, amount);
+```
+
+### Access Control
+
+```solidity
+modifier onlyOwner() {
+    require(msg.sender == owner, "Not owner");
+    _;
+}
+```
+
+### Reentrancy Protection
+
+```solidity
+function withdraw() external nonReentrant {
+    // Implementation
+}
+```
+
+### Custom Errors
+
+```solidity
+error InsufficientBalance(uint256 required, uint256 available);
+
+if (balance < amount) {
+    revert InsufficientBalance(amount, balance);
+}
+```
+
+## What NOT to Do
+
+1. **Don't** add unnecessary features
+2. **Don't** change working code "just because"
+3. **Don't** ignore existing patterns in the codebase
+4. **Don't** use deprecated Solidity features
+5. **Don't** skip input validation
+6. **Don't** make external calls without error handling
+7. **Don't** use tx.origin for authorization
+8. **Don't** leave TODO comments in production code
+9. **Don't** commit test files that are failing
+10. **Don't** ignore compiler warnings without understanding them
+
+## When in Doubt
+
+- Ask the user before making changes
+- Preserve existing code style and patterns
+- Follow the principle of least change
+- Test thoroughly before suggesting changes
+- Document reasoning for non-obvious decisions
