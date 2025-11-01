@@ -182,10 +182,14 @@ contract VeniceMind is Ownable, ReentrancyGuard {
      * @notice Emergency withdrawal of non-VVV tokens
      * @dev Only the owner can call this function
      * @dev Cannot withdraw VVV tokens
+     * @dev Uses reentrancy guard for additional security
      * @param token The token contract address to withdraw
      * @param to The recipient address
      */
-    function emergencyWithdraw(address token, address to) external onlyOwner {
+    function emergencyWithdraw(
+        address token,
+        address to
+    ) external onlyOwner nonReentrant {
         require(token != address(0), "Token address cannot be zero");
         require(to != address(0), "Recipient address cannot be zero");
         require(token != address(vvvToken), "Cannot withdraw VVV tokens");

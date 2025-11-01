@@ -80,9 +80,6 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     /// @notice Error thrown when allowlist is enabled and caller is not allowed
     error NotAllowedToCreateMind();
 
-    /// @notice Error thrown when trying to create a mind with invalid parameters
-    error InvalidMindParameters();
-
     /**
      * @dev Constructor sets the VVV token address and deploys the implementation
      * @param _vvvToken The VVV token contract address
@@ -120,7 +117,12 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
 
         // Initialize the clone with the factory as owner initially
         // The factory owner (Venice) can later transfer ownership to multisigs
-        VeniceMind(mindAddress).initialize(vvvToken, address(this));
+        // If initialization fails, the transaction reverts and mindId increment is rolled back
+        try
+            VeniceMind(mindAddress).initialize(vvvToken, address(this))
+        {} catch {
+            revert("Failed to initialize mind clone");
+        }
 
         // Store mind information
         minds[mindId] = MindInfo({
@@ -150,18 +152,23 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
 
         VeniceMind mindContract = VeniceMind(mind.mindAddress);
 
-        // Get the current balance before burning
+        // Get the actual burned amount from the mind contract before and after
+        uint256 totalBurnedBefore = mindContract.totalBurned();
         uint256 balanceBefore = mindContract.getVVVBalance();
 
         if (balanceBefore > 0) {
             // Burn the tokens
             mindContract.burn();
 
-            // Update global accounting
-            globalTotalBurned += balanceBefore;
-            mind.totalBurned += balanceBefore;
+            // Get the actual burned amount (handles any deposits that occurred between checks)
+            uint256 totalBurnedAfter = mindContract.totalBurned();
+            uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
 
-            emit GlobalBurn(mindId, balanceBefore, globalTotalBurned);
+            // Update global accounting based on what was actually burned
+            globalTotalBurned += actuallyBurned;
+            mind.totalBurned = totalBurnedAfter; // Sync with actual contract state
+
+            emit GlobalBurn(mindId, actuallyBurned, globalTotalBurned);
         }
     }
 
@@ -169,27 +176,39 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
      * @notice Burns all VVV tokens from all minds in one transaction
      * @dev Only the owner can call this function
      * @dev Uses reentrancy guard for security
+     * @dev WARNING: May exceed gas limits with many minds. Use burnFromMind for individual minds if needed.
      */
     function burnFromAllMinds() external onlyOwner nonReentrant {
-        uint256 totalBurnedInBatch = 0;
+        uint256 length = mindIds.length;
 
-        for (uint256 i = 0; i < mindIds.length; i++) {
+        for (uint256 i = 0; i < length; i++) {
             uint256 mindId = mindIds[i];
             MindInfo storage mind = minds[mindId];
 
             VeniceMind mindContract = VeniceMind(mind.mindAddress);
+
+            // Skip minds that are no longer owned by the factory
+            if (mindContract.owner() != address(this)) {
+                continue;
+            }
+
+            // Get the actual burned amount from the mind contract
+            uint256 totalBurnedBefore = mindContract.totalBurned();
             uint256 balanceBefore = mindContract.getVVVBalance();
 
             if (balanceBefore > 0) {
                 // Burn the tokens
                 mindContract.burn();
 
-                // Update accounting
-                globalTotalBurned += balanceBefore;
-                mind.totalBurned += balanceBefore;
-                totalBurnedInBatch += balanceBefore;
+                // Get the actual burned amount
+                uint256 totalBurnedAfter = mindContract.totalBurned();
+                uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
 
-                emit GlobalBurn(mindId, balanceBefore, globalTotalBurned);
+                // Update accounting based on what was actually burned
+                globalTotalBurned += actuallyBurned;
+                mind.totalBurned = totalBurnedAfter; // Sync with actual contract state
+
+                emit GlobalBurn(mindId, actuallyBurned, globalTotalBurned);
             }
         }
     }
@@ -261,7 +280,8 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     function getTotalBurnedBy(
         address contributor
     ) external view returns (uint256 total) {
-        for (uint256 i = 0; i < mindIds.length; i++) {
+        uint256 length = mindIds.length;
+        for (uint256 i = 0; i < length; i++) {
             uint256 mindId = mindIds[i];
             VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
             total += mindContract.burnedBy(contributor);
@@ -284,7 +304,8 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
      * @return total The total VVV balance across all minds
      */
     function getTotalVVVBalance() external view returns (uint256 total) {
-        for (uint256 i = 0; i < mindIds.length; i++) {
+        uint256 length = mindIds.length;
+        for (uint256 i = 0; i < length; i++) {
             uint256 mindId = mindIds[i];
             VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
             total += mindContract.getVVVBalance();
