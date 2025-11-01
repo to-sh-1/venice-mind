@@ -17,11 +17,15 @@ contract VeniceMind is Ownable, ReentrancyGuard {
     /// @notice The VVV token contract address
     IERC20 public vvvToken;
 
-    /// @notice Whether the contract has been initialized
-    bool private initialized;
-
     /// @notice Total amount of VVV burned from this mind
     uint256 public totalBurned;
+
+    /// @notice Whether the contract has been initialized (packed with totalBurned optimization)
+    bool private initialized;
+
+    /// @notice Burn address constant (0xdead) - saves gas on repeated transfers
+    address private constant BURN_ADDRESS =
+        address(0x000000000000000000000000000000000000dEaD);
 
     /// @notice Mapping of contributor address to total amount burned by them
     mapping(address => uint256) public burnedBy;
@@ -110,34 +114,35 @@ contract VeniceMind is Ownable, ReentrancyGuard {
      * @dev Records the burn amount for accounting purposes
      */
     function burn() external onlyOwner nonReentrant {
-        uint256 balance = vvvToken.balanceOf(address(this));
+        // Cache token address to save gas
+        IERC20 token = vvvToken;
+        uint256 balance = token.balanceOf(address(this));
 
         if (balance == 0) {
             revert NoTokensToBurn();
         }
 
+        // For accounting purposes, we attribute the burn to the caller
+        address contributor = msg.sender;
+
         // Update accounting
         totalBurned += balance;
 
-        // For accounting purposes, we attribute the burn to the caller
-        // In practice, this would be the factory or admin calling burn
-        address contributor = msg.sender;
-
+        // Track contributor and update their burned amount
+        uint256 newContributorTotal;
         if (!isContributor[contributor]) {
             contributors.push(contributor);
             isContributor[contributor] = true;
+            newContributorTotal = balance;
+        } else {
+            newContributorTotal = burnedBy[contributor] + balance;
         }
+        burnedBy[contributor] = newContributorTotal;
 
-        burnedBy[contributor] += balance;
+        // Burn tokens by transferring to burn address
+        token.safeTransfer(BURN_ADDRESS, balance);
 
-        // Burn tokens by transferring to a dedicated burn address
-        // Using 0xdead as the standard burn address (address(0) is not allowed by ERC20)
-        vvvToken.safeTransfer(
-            address(0x000000000000000000000000000000000000dEaD),
-            balance
-        );
-
-        emit Burn(contributor, balance, totalBurned, burnedBy[contributor]);
+        emit Burn(contributor, balance, totalBurned, newContributorTotal);
     }
 
     /**
@@ -152,7 +157,9 @@ contract VeniceMind is Ownable, ReentrancyGuard {
             "Contributor address cannot be zero"
         );
 
-        uint256 balance = vvvToken.balanceOf(address(this));
+        // Cache token address to save gas
+        IERC20 token = vvvToken;
+        uint256 balance = token.balanceOf(address(this));
 
         if (balance == 0) {
             revert NoTokensToBurn();
@@ -161,21 +168,21 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         // Update accounting
         totalBurned += balance;
 
+        // Track contributor and update their burned amount
+        uint256 newContributorTotal;
         if (!isContributor[contributor]) {
             contributors.push(contributor);
             isContributor[contributor] = true;
+            newContributorTotal = balance;
+        } else {
+            newContributorTotal = burnedBy[contributor] + balance;
         }
+        burnedBy[contributor] = newContributorTotal;
 
-        burnedBy[contributor] += balance;
+        // Burn tokens by transferring to burn address
+        token.safeTransfer(BURN_ADDRESS, balance);
 
-        // Burn tokens by transferring to a dedicated burn address
-        // Using 0xdead as the standard burn address (address(0) is not allowed by ERC20)
-        vvvToken.safeTransfer(
-            address(0x000000000000000000000000000000000000dEaD),
-            balance
-        );
-
-        emit Burn(contributor, balance, totalBurned, burnedBy[contributor]);
+        emit Burn(contributor, balance, totalBurned, newContributorTotal);
     }
 
     /**
