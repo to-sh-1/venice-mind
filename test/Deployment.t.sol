@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
-import {VeniceMindBurn} from "../src/VeniceMindBurn.sol";
+import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 
 /**
@@ -59,7 +59,7 @@ contract DeploymentTest is Test {
         assertEq(factory.getMindCount(), 1);
 
         // Verify mind contract
-        VeniceMindBurn mindContract = VeniceMindBurn(mindAddress);
+        VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.owner(), address(factory));
         assertEq(address(mindContract.vvvToken()), address(vvvToken));
 
@@ -89,7 +89,7 @@ contract DeploymentTest is Test {
         vm.stopPrank();
 
         // Verify deposit
-        VeniceMindBurn mindContract = VeniceMindBurn(mindAddress);
+        VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.getVVVBalance(), 100e18);
 
         // Factory owner burns tokens

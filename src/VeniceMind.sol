@@ -15,7 +15,10 @@ contract VeniceMind is Ownable, ReentrancyGuard {
     using SafeERC20 for IERC20;
 
     /// @notice The VVV token contract address
-    IERC20 public immutable vvvToken;
+    IERC20 public vvvToken;
+
+    /// @notice Whether the contract has been initialized
+    bool private initialized;
 
     /// @notice Total amount of VVV burned from this mind
     uint256 public totalBurned;
@@ -65,16 +68,39 @@ contract VeniceMind is Ownable, ReentrancyGuard {
     /// @notice Error thrown when trying to withdraw VVV tokens
     error CannotWithdrawVVV();
 
+    /// @notice Error thrown when trying to initialize an already initialized contract
+    error AlreadyInitialized();
+
     /**
-     * @dev Constructor sets the VVV token address and initial owner
+     * @dev Constructor for direct deployment (tests) or implementation contract
      * @param _vvvToken The VVV token contract address
-     * @param _owner The initial owner of this mind contract
+     * @param _owner The initial owner
+     * @notice For clones created via factory, use initialize() instead
      */
     constructor(address _vvvToken, address _owner) Ownable(_owner) {
         require(_vvvToken != address(0), "VVV token address cannot be zero");
         require(_owner != address(0), "Owner address cannot be zero");
 
         vvvToken = IERC20(_vvvToken);
+        initialized = true; // Prevent initialize() from being called on direct deployments
+    }
+
+    /**
+     * @notice Initializes the clone with VVV token and owner
+     * @dev Can only be called once per clone
+     * @param _vvvToken The VVV token contract address
+     * @param _owner The initial owner of this mind contract
+     */
+    function initialize(address _vvvToken, address _owner) external {
+        require(_vvvToken != address(0), "VVV token address cannot be zero");
+        require(_owner != address(0), "Owner address cannot be zero");
+        if (initialized) {
+            revert AlreadyInitialized();
+        }
+
+        initialized = true;
+        vvvToken = IERC20(_vvvToken);
+        _transferOwnership(_owner);
     }
 
     /**
@@ -105,8 +131,11 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         burnedBy[contributor] += balance;
 
         // Burn tokens by transferring to a dedicated burn address
-        // Using address(1) as a burn address since address(0) is not allowed
-        vvvToken.safeTransfer(address(1), balance);
+        // Using 0xdead as the standard burn address (address(0) is not allowed by ERC20)
+        vvvToken.safeTransfer(
+            address(0x000000000000000000000000000000000000dEaD),
+            balance
+        );
 
         emit Burn(contributor, balance, totalBurned, burnedBy[contributor]);
     }
@@ -140,8 +169,11 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         burnedBy[contributor] += balance;
 
         // Burn tokens by transferring to a dedicated burn address
-        // Using address(1) as a burn address since address(0) is not allowed
-        vvvToken.safeTransfer(address(1), balance);
+        // Using 0xdead as the standard burn address (address(0) is not allowed by ERC20)
+        vvvToken.safeTransfer(
+            address(0x000000000000000000000000000000000000dEaD),
+            balance
+        );
 
         emit Burn(contributor, balance, totalBurned, burnedBy[contributor]);
     }
@@ -200,14 +232,5 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         address previousOwner = owner();
         _transferOwnership(newOwner);
         emit OwnerTransferred(previousOwner, newOwner);
-    }
-
-    /**
-     * @notice Override renounceOwnership to emit custom event
-     */
-    function renounceOwnership() public override onlyOwner {
-        address previousOwner = owner();
-        _transferOwnership(address(0));
-        emit OwnerTransferred(previousOwner, address(0));
     }
 }

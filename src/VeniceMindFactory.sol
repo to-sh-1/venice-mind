@@ -120,7 +120,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
 
         // Initialize the clone with the factory as owner initially
         // The factory owner (Venice) can later transfer ownership to multisigs
-        VeniceMind(mindAddress).transferOwnership(address(this));
+        VeniceMind(mindAddress).initialize(vvvToken, address(this));
 
         // Store mind information
         minds[mindId] = MindInfo({
@@ -263,9 +263,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     ) external view returns (uint256 total) {
         for (uint256 i = 0; i < mindIds.length; i++) {
             uint256 mindId = mindIds[i];
-            VeniceMind mindContract = VeniceMind(
-                minds[mindId].mindAddress
-            );
+            VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
             total += mindContract.burnedBy(contributor);
         }
     }
@@ -288,9 +286,7 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
     function getTotalVVVBalance() external view returns (uint256 total) {
         for (uint256 i = 0; i < mindIds.length; i++) {
             uint256 mindId = mindIds[i];
-            VeniceMind mindContract = VeniceMind(
-                minds[mindId].mindAddress
-            );
+            VeniceMind mindContract = VeniceMind(minds[mindId].mindAddress);
             total += mindContract.getVVVBalance();
         }
     }

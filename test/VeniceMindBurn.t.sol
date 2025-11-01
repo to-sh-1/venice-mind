@@ -2,12 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
-import {VeniceMindBurn} from "../src/VeniceMindBurn.sol";
+import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
 contract VeniceMindBurnTest is Test {
-    VeniceMindBurn public mindBurn;
+    VeniceMind public mindBurn;
     MockVVV public vvvToken;
     address public owner;
     address public user1;
@@ -41,7 +41,7 @@ contract VeniceMindBurnTest is Test {
 
         // Deploy mind burn contract
         vm.prank(owner);
-        mindBurn = new VeniceMindBurn(address(vvvToken), owner);
+        mindBurn = new VeniceMind(address(vvvToken), owner);
 
         // Mint tokens to users for testing
         vm.startPrank(owner);
@@ -138,7 +138,7 @@ contract VeniceMindBurnTest is Test {
     }
 
     function testBurnWithZeroBalance() public {
-        vm.expectRevert(VeniceMindBurn.NoTokensToBurn.selector);
+        vm.expectRevert(VeniceMind.NoTokensToBurn.selector);
         vm.prank(owner);
         mindBurn.burn();
     }
@@ -239,16 +239,6 @@ contract VeniceMindBurnTest is Test {
         mindBurn.transferOwnership(user1);
 
         assertEq(mindBurn.owner(), user1);
-    }
-
-    function testRenounceOwnership() public {
-        vm.expectEmit(true, true, false, false);
-        emit OwnerTransferred(owner, address(0));
-
-        vm.prank(owner);
-        mindBurn.renounceOwnership();
-
-        assertEq(mindBurn.owner(), address(0));
     }
 
     function testOnlyOwnerCanTransferOwnership() public {

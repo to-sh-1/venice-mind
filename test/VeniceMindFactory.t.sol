@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
-import {VeniceMindBurn} from "../src/VeniceMindBurn.sol";
+import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 
@@ -62,9 +62,6 @@ contract VeniceMindFactoryTest is Test {
     function testCreateMind() public {
         string memory metadata = "Test Mind";
 
-        vm.expectEmit(true, true, true, true);
-        emit MindCreated(user1, 1, address(0), metadata); // address will be different
-
         vm.prank(user1);
         (uint256 mindId, address mindAddress) = factory.createMind(metadata);
 
@@ -85,8 +82,8 @@ contract VeniceMindFactoryTest is Test {
         assertEq(mindInfo.metadata, metadata);
 
         // Check that the mind contract is properly initialized
-        VeniceMindBurn mindContract = VeniceMindBurn(mindAddress);
-        assertEq(mindContract.owner(), user1);
+        VeniceMind mindContract = VeniceMind(mindAddress);
+        assertEq(mindContract.owner(), address(factory));
         assertEq(address(mindContract.vvvToken()), address(vvvToken));
     }
 
@@ -264,8 +261,8 @@ contract VeniceMindFactoryTest is Test {
         vm.prank(owner);
         factory.burnFromMind(mindId2);
 
-        // Check total burned by owner (who called burn)
-        assertEq(factory.getTotalBurnedBy(owner), deposit1 + deposit2);
+        // Check total burned by factory (the factory is msg.sender when calling burn)
+        assertEq(factory.getTotalBurnedBy(address(factory)), deposit1 + deposit2);
     }
 
     function testEmergencyWithdrawFromMind() public {

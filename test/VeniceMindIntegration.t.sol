@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
-import {VeniceMindBurn} from "../src/VeniceMindBurn.sol";
+import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 
 contract VeniceMindIntegrationTest is Test {
@@ -202,12 +202,12 @@ contract VeniceMindIntegrationTest is Test {
         vm.prank(user1);
         (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
 
-        VeniceMindBurn mindContract = VeniceMindBurn(mindAddress);
-        assertEq(mindContract.owner(), user1);
+        VeniceMind mindContract = VeniceMind(mindAddress);
+        assertEq(mindContract.owner(), address(factory));
 
-        // User1 transfers ownership to multisig
-        vm.prank(user1);
-        mindContract.transferOwnership(multisig);
+        // Factory owner transfers ownership to multisig
+        vm.prank(owner);
+        factory.transferMindOwnership(mindId, multisig);
 
         assertEq(mindContract.owner(), multisig);
 
