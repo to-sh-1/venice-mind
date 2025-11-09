@@ -5,17 +5,30 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     SafeERC20
 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
 import {
-    ReentrancyGuard
-} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+    Initializable
+} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {
+    OwnableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {
+    ReentrancyGuardUpgradeable
+} from "./utils/ReentrancyGuardUpgradeable.sol";
+import {
+    UUPSUpgradeable
+} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
  * @title VeniceMind
  * @dev Mind subcontract that holds VVV tokens and allows burning them
  * @notice This contract accepts VVV deposits and allows the owner to burn the entire balance
  */
-contract VeniceMind is Ownable, ReentrancyGuard {
+contract VeniceMind is
+    Initializable,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
     using SafeERC20 for IERC20;
 
     /// @notice The VVV token contract address
@@ -78,18 +91,9 @@ contract VeniceMind is Ownable, ReentrancyGuard {
     /// @notice Error thrown when trying to initialize an already initialized contract
     error AlreadyInitialized();
 
-    /**
-     * @dev Constructor for direct deployment (tests) or implementation contract
-     * @param _vvvToken The VVV token contract address
-     * @param _owner The initial owner
-     * @notice For clones created via factory, use initialize() instead
-     */
-    constructor(address _vvvToken, address _owner) Ownable(_owner) {
-        require(_vvvToken != address(0), "VVV token address cannot be zero");
-        require(_owner != address(0), "Owner address cannot be zero");
-
-        vvvToken = IERC20(_vvvToken);
-        initialized = true; // Prevent initialize() from being called on direct deployments
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
     }
 
     /**
@@ -98,16 +102,17 @@ contract VeniceMind is Ownable, ReentrancyGuard {
      * @param _vvvToken The VVV token contract address
      * @param _owner The initial owner of this mind contract
      */
-    function initialize(address _vvvToken, address _owner) external {
+    function initialize(
+        address _vvvToken,
+        address _owner
+    ) external initializer {
         require(_vvvToken != address(0), "VVV token address cannot be zero");
         require(_owner != address(0), "Owner address cannot be zero");
-        if (initialized) {
-            revert AlreadyInitialized();
-        }
 
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
         initialized = true;
         vvvToken = IERC20(_vvvToken);
-        _transferOwnership(_owner);
     }
 
     /**
@@ -249,4 +254,8 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         _transferOwnership(newOwner);
         emit OwnerTransferred(previousOwner, newOwner);
     }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    uint256[50] private __gap;
 }

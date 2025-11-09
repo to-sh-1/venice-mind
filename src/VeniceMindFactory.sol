@@ -2,23 +2,41 @@
 pragma solidity ^0.8.24;
 
 import {VeniceMind} from "./VeniceMind.sol";
-import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {
+    Initializable
+} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {
+    OwnableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {
+    ReentrancyGuardUpgradeable
+} from "./utils/ReentrancyGuardUpgradeable.sol";
+import {
+    UUPSUpgradeable
+} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title VeniceMindFactory
  * @dev Master factory that creates mind subcontracts using minimal proxy clones
  * @notice This contract manages the creation of mind burn contracts and tracks global statistics
  */
-contract VeniceMindFactory is Ownable, ReentrancyGuard {
+contract VeniceMindFactory is
+    Initializable,
+    OwnableUpgradeable,
+    ReentrancyGuardUpgradeable,
+    UUPSUpgradeable
+{
     using Clones for address;
 
     /// @notice The implementation contract for mind burn contracts
-    VeniceMind public immutable mindImplementation;
+    address public mindImplementation;
 
     /// @notice The VVV token contract address
-    address public immutable vvvToken;
+    address public vvvToken;
 
     /// @notice Counter for mind IDs
     uint256 public mindCounter;
@@ -85,14 +103,33 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
      * @param _vvvToken The VVV token contract address
      * @param _owner The initial owner of the factory
      */
-    constructor(address _vvvToken, address _owner) Ownable(_owner) {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    /**
+     * @notice Initializes the factory contract
+     * @param _vvvToken The VVV token contract address
+     * @param _owner The initial owner of the factory
+     * @param _mindImplementation The VeniceMind implementation address
+     */
+    function initialize(
+        address _vvvToken,
+        address _owner,
+        address _mindImplementation
+    ) external initializer {
         require(_vvvToken != address(0), "VVV token address cannot be zero");
         require(_owner != address(0), "Owner address cannot be zero");
+        require(
+            _mindImplementation != address(0),
+            "Mind implementation cannot be zero"
+        );
 
+        __Ownable_init(_owner);
+        __ReentrancyGuard_init();
         vvvToken = _vvvToken;
-
-        // Deploy the implementation contract
-        mindImplementation = new VeniceMind(_vvvToken, address(this));
+        mindImplementation = _mindImplementation;
     }
 
     /**
@@ -112,17 +149,13 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         // Increment mind counter
         mindId = ++mindCounter;
 
-        // Create minimal proxy clone
-        mindAddress = address(mindImplementation).clone();
-
-        // Initialize the clone with the factory as owner initially
-        // The factory owner (Venice) can later transfer ownership to multisigs
-        // If initialization fails, the transaction reverts and mindId increment is rolled back
-        try
-            VeniceMind(mindAddress).initialize(vvvToken, address(this))
-        {} catch {
-            revert("Failed to initialize mind clone");
-        }
+        // Deploy upgradeable mind proxy with initializer data
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMind.initialize.selector,
+            vvvToken,
+            address(this)
+        );
+        mindAddress = address(new ERC1967Proxy(mindImplementation, initData));
 
         // Store mind information
         minds[mindId] = MindInfo({
@@ -366,4 +399,8 @@ contract VeniceMindFactory is Ownable, ReentrancyGuard {
         VeniceMind mindContract = VeniceMind(mindAddr);
         mindContract.emergencyWithdraw(token, to);
     }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    uint256[50] private __gap;
 }

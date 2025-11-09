@@ -5,6 +5,9 @@ import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindIntegrationTest is Test {
     VeniceMindFactory public factory;
@@ -26,8 +29,7 @@ contract VeniceMindIntegrationTest is Test {
         vvvToken = new MockVVV(owner);
 
         // Deploy factory
-        vm.prank(owner);
-        factory = new VeniceMindFactory(address(vvvToken), owner);
+        factory = deployFactory(address(vvvToken), owner);
 
         // Mint tokens to users for testing
         vm.startPrank(owner);
@@ -35,6 +37,22 @@ contract VeniceMindIntegrationTest is Test {
         vvvToken.mint(user2, 10000e18);
         vvvToken.mint(user3, 10000e18);
         vm.stopPrank();
+    }
+
+    function deployFactory(
+        address token,
+        address owner_
+    ) internal returns (VeniceMindFactory) {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector,
+            token,
+            owner_,
+            address(mindImpl)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
+        return VeniceMindFactory(address(proxy));
     }
 
     function testFullFlow() public {

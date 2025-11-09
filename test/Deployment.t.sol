@@ -5,6 +5,9 @@ import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title Deployment Test
@@ -15,6 +18,22 @@ contract DeploymentTest is Test {
     MockVVV public vvvToken;
     address public owner;
     address public user1;
+
+    function deployFactory(
+        address token,
+        address owner_
+    ) internal returns (VeniceMindFactory) {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector,
+            token,
+            owner_,
+            address(mindImpl)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
+        return VeniceMindFactory(address(proxy));
+    }
 
     function setUp() public {
         owner = makeAddr("owner");
@@ -31,8 +50,7 @@ contract DeploymentTest is Test {
         assertEq(vvvToken.symbol(), "VVV");
 
         // Deploy factory
-        vm.prank(owner);
-        factory = new VeniceMindFactory(address(vvvToken), owner);
+        factory = deployFactory(address(vvvToken), owner);
 
         assertEq(factory.owner(), owner);
         assertEq(factory.vvvToken(), address(vvvToken));
@@ -45,10 +63,9 @@ contract DeploymentTest is Test {
 
     function testCreateMindAfterDeployment() public {
         // Deploy contracts
-        vm.startPrank(owner);
+        vm.prank(owner);
         vvvToken = new MockVVV(owner);
-        factory = new VeniceMindFactory(address(vvvToken), owner);
-        vm.stopPrank();
+        factory = deployFactory(address(vvvToken), owner);
 
         // Create a mind
         vm.prank(user1);
@@ -69,10 +86,9 @@ contract DeploymentTest is Test {
 
     function testFullWorkflow() public {
         // Deploy contracts
-        vm.startPrank(owner);
+        vm.prank(owner);
         vvvToken = new MockVVV(owner);
-        factory = new VeniceMindFactory(address(vvvToken), owner);
-        vm.stopPrank();
+        factory = deployFactory(address(vvvToken), owner);
 
         // Mint tokens to user
         vm.prank(owner);

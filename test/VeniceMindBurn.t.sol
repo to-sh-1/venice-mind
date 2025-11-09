@@ -5,6 +5,9 @@ import {Test, console} from "forge-std/Test.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindBurnTest is Test {
     VeniceMind public mindBurn;
@@ -39,9 +42,15 @@ contract VeniceMindBurnTest is Test {
         // Deploy mock VVV token
         vvvToken = new MockVVV(owner);
 
-        // Deploy mind burn contract
-        vm.prank(owner);
-        mindBurn = new VeniceMind(address(vvvToken), owner);
+        // Deploy upgradeable mind contract
+        VeniceMind mindImpl = new VeniceMind();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMind.initialize.selector,
+            address(vvvToken),
+            owner
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(mindImpl), initData);
+        mindBurn = VeniceMind(address(proxy));
 
         // Mint tokens to users for testing
         vm.startPrank(owner);

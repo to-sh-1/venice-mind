@@ -3,7 +3,11 @@ pragma solidity ^0.8.24;
 
 import {Script, console} from "forge-std/Script.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
+import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title Deploy Script
@@ -24,19 +28,38 @@ contract DeployScript is Script {
         MockVVV vvvToken = new MockVVV(deployer);
         console.log("VVV Token deployed at:", address(vvvToken));
 
-        // Deploy factory
-        VeniceMindFactory factory = new VeniceMindFactory(
-            address(vvvToken),
-            deployer
+        // Deploy VeniceMind implementation
+        VeniceMind mindImpl = new VeniceMind();
+        console.log(
+            "VeniceMind implementation deployed at:",
+            address(mindImpl)
         );
-        console.log("Factory deployed at:", address(factory));
+
+        // Deploy factory implementation
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        console.log(
+            "VeniceMindFactory implementation deployed at:",
+            address(factoryImpl)
+        );
+
+        // Deploy factory proxy
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector,
+            address(vvvToken),
+            deployer,
+            address(mindImpl)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
+        VeniceMindFactory factory = VeniceMindFactory(address(proxy));
+        console.log("VeniceMindFactory proxy deployed at:", address(factory));
 
         vm.stopBroadcast();
 
         // Verify deployment
         console.log("\n=== Deployment Summary ===");
         console.log("VVV Token:", address(vvvToken));
-        console.log("Factory:", address(factory));
+        console.log("VeniceMind implementation:", address(mindImpl));
+        console.log("Factory Proxy:", address(factory));
         console.log("Factory Owner:", factory.owner());
         console.log("VVV Token Owner:", vvvToken.owner());
     }

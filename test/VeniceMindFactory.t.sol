@@ -6,6 +6,9 @@ import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindFactoryTest is Test {
     VeniceMindFactory public factory;
@@ -38,9 +41,8 @@ contract VeniceMindFactoryTest is Test {
         // Deploy mock VVV token
         vvvToken = new MockVVV(owner);
 
-        // Deploy factory
-        vm.prank(owner);
-        factory = new VeniceMindFactory(address(vvvToken), owner);
+        // Deploy factory via proxy
+        factory = deployFactory(address(vvvToken), owner);
 
         // Mint tokens to users for testing
         vm.startPrank(owner);
@@ -48,6 +50,22 @@ contract VeniceMindFactoryTest is Test {
         vvvToken.mint(user2, 1000e18);
         vvvToken.mint(user3, 1000e18);
         vm.stopPrank();
+    }
+
+    function deployFactory(
+        address token,
+        address owner_
+    ) internal returns (VeniceMindFactory) {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector,
+            token,
+            owner_,
+            address(mindImpl)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
+        return VeniceMindFactory(address(proxy));
     }
 
     function testInitialState() public {
@@ -262,7 +280,10 @@ contract VeniceMindFactoryTest is Test {
         factory.burnFromMind(mindId2);
 
         // Check total burned by factory (the factory is msg.sender when calling burn)
-        assertEq(factory.getTotalBurnedBy(address(factory)), deposit1 + deposit2);
+        assertEq(
+            factory.getTotalBurnedBy(address(factory)),
+            deposit1 + deposit2
+        );
     }
 
     function testEmergencyWithdrawFromMind() public {
