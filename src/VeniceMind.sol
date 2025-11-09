@@ -2,9 +2,13 @@
 pragma solidity ^0.8.24;
 
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
+import {
+    SafeERC20
+} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Ownable} from "@openzeppelin/contracts/access/Ownable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 
 /**
  * @title VeniceMind
@@ -24,8 +28,7 @@ contract VeniceMind is Ownable, ReentrancyGuard {
     bool private initialized;
 
     /// @notice Burn address constant (0xdead) - saves gas on repeated transfers
-    address private constant BURN_ADDRESS =
-        address(0x000000000000000000000000000000000000dEaD);
+    address private constant BURN_ADDRESS = address(0);
 
     /// @notice Mapping of contributor address to total amount burned by them
     mapping(address => uint256) public burnedBy;
@@ -140,7 +143,8 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         burnedBy[contributor] = newContributorTotal;
 
         // Burn tokens by transferring to burn address
-        token.safeTransfer(BURN_ADDRESS, balance);
+        bool success = token.transfer(BURN_ADDRESS, balance);
+        require(success, "Burn transfer failed");
 
         emit Burn(contributor, balance, totalBurned, newContributorTotal);
     }
@@ -180,7 +184,8 @@ contract VeniceMind is Ownable, ReentrancyGuard {
         burnedBy[contributor] = newContributorTotal;
 
         // Burn tokens by transferring to burn address
-        token.safeTransfer(BURN_ADDRESS, balance);
+        bool success = token.transfer(BURN_ADDRESS, balance);
+        require(success, "Burn transfer failed");
 
         emit Burn(contributor, balance, totalBurned, newContributorTotal);
     }

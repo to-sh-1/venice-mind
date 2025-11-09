@@ -59,20 +59,34 @@ contract MockVVV is ERC20 {
         _burn(from, amount);
     }
 
-    /**
-     * @notice Allows burning tokens by transferring to the burn address (0xdead)
-     * @dev This simulates real-world tokens that burn on transfer to a burn address
-     */
-    function _update(
+    function transfer(
+        address to,
+        uint256 value
+    ) public override returns (bool) {
+        address owner_ = _msgSender();
+        _transferAllowingZero(owner_, to, value);
+        return true;
+    }
+
+    function transferFrom(
         address from,
         address to,
         uint256 value
-    ) internal override {
-        if (to == address(0x000000000000000000000000000000000000dEaD)) {
-            // If transferring to burn address, burn the tokens
-            _burn(from, value);
-        } else {
-            super._update(from, to, value);
+    ) public override returns (bool) {
+        address spender = _msgSender();
+        _spendAllowance(from, spender, value);
+        _transferAllowingZero(from, to, value);
+        return true;
+    }
+
+    function _transferAllowingZero(
+        address from,
+        address to,
+        uint256 value
+    ) internal {
+        if (from == address(0)) {
+            revert ERC20InvalidSender(address(0));
         }
+        _update(from, to, value);
     }
 }
