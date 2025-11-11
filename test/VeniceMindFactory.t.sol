@@ -1,11 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {
     ERC1967Proxy
 } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
@@ -31,6 +30,17 @@ contract VeniceMindFactoryTest is Test {
     );
     event AllowlistUpdated(address indexed account, bool allowed);
     event AllowlistToggled(bool enabled);
+
+    function _depositToMind(
+        address contributor,
+        address mindAddress,
+        uint256 amount
+    ) internal {
+        vm.startPrank(contributor);
+        vvvToken.approve(mindAddress, amount);
+        VeniceMind(mindAddress).deposit(amount);
+        vm.stopPrank();
+    }
 
     function setUp() public {
         owner = makeAddr("owner");
@@ -130,10 +140,7 @@ contract VeniceMindFactoryTest is Test {
 
         // Deposit VVV tokens to the mind
         uint256 depositAmount = 100e18;
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress, depositAmount);
-        vvvToken.transfer(mindAddress, depositAmount);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress, depositAmount);
 
         assertEq(factory.getMindVVVBalance(mindId), depositAmount);
 
@@ -166,15 +173,8 @@ contract VeniceMindFactoryTest is Test {
         uint256 deposit1 = 100e18;
         uint256 deposit2 = 50e18;
 
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress1, deposit1);
-        vvvToken.transfer(mindAddress1, deposit1);
-        vm.stopPrank();
-
-        vm.startPrank(user2);
-        vvvToken.approve(mindAddress2, deposit2);
-        vvvToken.transfer(mindAddress2, deposit2);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress1, deposit1);
+        _depositToMind(user2, mindAddress2, deposit2);
 
         assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2);
 
@@ -225,10 +225,7 @@ contract VeniceMindFactoryTest is Test {
         (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
 
         uint256 depositAmount = 100e18;
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress, depositAmount);
-        vvvToken.transfer(mindAddress, depositAmount);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress, depositAmount);
 
         vm.expectRevert();
         vm.prank(user1);
@@ -251,7 +248,7 @@ contract VeniceMindFactoryTest is Test {
         factory.toggleAllowlist(true);
     }
 
-    function testGetTotalBurnedBy() public {
+    function testGetTotalContributedBy() public {
         // Create minds
         vm.prank(user1);
         (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
@@ -259,31 +256,22 @@ contract VeniceMindFactoryTest is Test {
         vm.prank(user2);
         (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
 
-        // Deposit and burn from mind1
+        // Deposit into mind1
         uint256 deposit1 = 100e18;
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress1, deposit1);
-        vvvToken.transfer(mindAddress1, deposit1);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress1, deposit1);
 
+        // Deposit into mind2
+        uint256 deposit2 = 50e18;
+        _depositToMind(user2, mindAddress2, deposit2);
+
+        // Optional burn to ensure contributions persist even after burning
         vm.prank(owner);
         factory.burnFromMind(mindId1);
-
-        // Deposit and burn from mind2
-        uint256 deposit2 = 50e18;
-        vm.startPrank(user2);
-        vvvToken.approve(mindAddress2, deposit2);
-        vvvToken.transfer(mindAddress2, deposit2);
-        vm.stopPrank();
-
         vm.prank(owner);
         factory.burnFromMind(mindId2);
 
-        // Check total burned by factory (the factory is msg.sender when calling burn)
-        assertEq(
-            factory.getTotalBurnedBy(address(factory)),
-            deposit1 + deposit2
-        );
+        assertEq(factory.getTotalContributedBy(user1), deposit1);
+        assertEq(factory.getTotalContributedBy(user2), deposit2);
     }
 
     function testEmergencyWithdrawFromMind() public {
@@ -361,10 +349,7 @@ contract VeniceMindFactoryTest is Test {
         vvvToken.mint(user1, amount);
         vm.stopPrank();
 
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress, amount);
-        vvvToken.transfer(mindAddress, amount);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress, amount);
 
         // Burn from mind
         vm.prank(owner);

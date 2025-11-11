@@ -9,5 +9,4 @@ via_ir = false
 gas_reports = ["*"]
 fuzz = { runs = 1000 }
 invariant = { runs = 256, depth = 15 }
-
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

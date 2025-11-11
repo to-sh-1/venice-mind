@@ -9,23 +9,40 @@ import {
  * @dev Minimal clone of OpenZeppelin's ReentrancyGuardUpgradeable to avoid adding the entire module.
  */
 abstract contract ReentrancyGuardUpgradeable is Initializable {
-    uint256 private constant _NOT_ENTERED = 1;
-    uint256 private constant _ENTERED = 2;
+    uint256 private constant NOT_ENTERED = 1;
+    uint256 private constant ENTERED = 2;
 
     uint256 private _status;
 
-    function __ReentrancyGuard_init() internal onlyInitializing {
-        __ReentrancyGuard_init_unchained();
+    /**
+     * @notice Initializes reentrancy guard storage during proxy initialization
+     */
+    function reentrancyGuardInit() internal onlyInitializing {
+        reentrancyGuardInitUnchained();
     }
 
-    function __ReentrancyGuard_init_unchained() internal onlyInitializing {
-        _status = _NOT_ENTERED;
+    /**
+     * @notice Initializes the guard state without re-invoking parent initializers
+     */
+    function reentrancyGuardInitUnchained() internal onlyInitializing {
+        _status = NOT_ENTERED;
     }
 
+    /**
+     * @notice Prevents a function from being re-entered
+     */
     modifier nonReentrant() {
-        require(_status != _ENTERED, "ReentrancyGuard: reentrant call");
-        _status = _ENTERED;
+        _nonReentrantBefore();
         _;
-        _status = _NOT_ENTERED;
+        _nonReentrantAfter();
+    }
+
+    function _nonReentrantBefore() private {
+        require(_status != ENTERED, "ReentrancyGuard: reentrant call");
+        _status = ENTERED;
+    }
+
+    function _nonReentrantAfter() private {
+        _status = NOT_ENTERED;
     }
 }

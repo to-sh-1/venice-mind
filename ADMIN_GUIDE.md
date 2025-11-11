@@ -121,7 +121,7 @@ uint256 mindVVVBalance = factory.getMindVVVBalance(mindId);
 ### Per-Contributor Statistics
 
 ```solidity
-uint256 contributorTotal = factory.getTotalBurnedBy(contributorAddress);
+uint256 contributorTotal = factory.getTotalContributedBy(contributorAddress);
 ```
 
 ### All Minds

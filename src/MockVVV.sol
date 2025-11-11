@@ -28,9 +28,9 @@ contract MockVVV is ERC20 {
 
     /**
      * @notice Mints tokens to a specified address
-     * @dev Only the owner can call this function
-     * @param to The address to mint tokens to
-     * @param amount The amount of tokens to mint
+     * @dev Only callable by the contract owner
+     * @param to The address receiving the newly minted tokens
+     * @param amount The number of tokens to mint
      */
     function mint(address to, uint256 amount) external {
         if (msg.sender != owner) {
@@ -42,16 +42,15 @@ contract MockVVV is ERC20 {
 
     /**
      * @notice Burns tokens from the caller's balance
-     * @param amount The amount of tokens to burn
+     * @param amount The quantity of tokens to destroy
      */
     function burn(uint256 amount) external {
         _burn(msg.sender, amount);
     }
 
     /**
-     * @notice Burns tokens from a specified address
-     * @dev Requires allowance from the token holder
-     * @param from The address to burn tokens from
+     * @notice Burns tokens from a specified address using allowance
+     * @param from The address whose tokens will be burned
      * @param amount The amount of tokens to burn
      */
     function burnFrom(address from, uint256 amount) external {
@@ -59,6 +58,10 @@ contract MockVVV is ERC20 {
         _burn(from, amount);
     }
 
+    /**
+     * @inheritdoc ERC20
+     * @dev Allows transfers to the zero address for burn semantics
+     */
     function transfer(
         address to,
         uint256 value
@@ -68,6 +71,10 @@ contract MockVVV is ERC20 {
         return true;
     }
 
+    /**
+     * @inheritdoc ERC20
+     * @dev Allows transfers to the zero address for burn semantics
+     */
     function transferFrom(
         address from,
         address to,
@@ -79,6 +86,12 @@ contract MockVVV is ERC20 {
         return true;
     }
 
+    /**
+     * @notice Internal helper that skips the zero-address recipient check
+     * @param from The token sender
+     * @param to The token recipient (may be zero address)
+     * @param value The amount being transferred
+     */
     function _transferAllowingZero(
         address from,
         address to,

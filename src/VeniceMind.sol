@@ -20,8 +20,7 @@ import {
 
 /**
  * @title VeniceMind
- * @dev Mind subcontract that holds VVV tokens and allows burning them
- * @notice This contract accepts VVV deposits and allows the owner to burn the entire balance
+ * @dev Mind subcontract that tracks VVV deposits and allows the owner to burn accounted balances
  */
 contract VeniceMind is
     Initializable,
@@ -37,45 +36,43 @@ contract VeniceMind is
     /// @notice Total amount of VVV burned from this mind
     uint256 public totalBurned;
 
-    /// @notice Whether the contract has been initialized (packed with totalBurned optimization)
-    bool private initialized;
-
-    /// @notice Burn address constant (0xdead) - saves gas on repeated transfers
+    /// @notice Burn address constant
     address private constant BURN_ADDRESS = address(0);
 
-    /// @notice Mapping of contributor address to total amount burned by them
-    mapping(address => uint256) public burnedBy;
+    /// @notice Mapping of contributor address to total amount contributed
+    mapping(address => uint256) public contributedBy;
 
-    /// @notice Array of all contributors who have burned tokens
+    /// @notice Array of all contributors who have interacted with this mind
     address[] private contributors;
 
     /// @notice Mapping to track if an address is already in contributors array
     mapping(address => bool) private isContributor;
 
+    // Legacy storage preserved for upgrade compatibility (no longer used)
+    mapping(address => uint256) private _legacyPendingBy;
+    uint256 private _legacyTotalPending;
+
+    /// @notice Event emitted when VVV tokens are deposited
+    event Deposit(
+        address indexed contributor,
+        uint256 amount,
+        uint256 totalContributed
+    );
+
     /// @notice Event emitted when VVV tokens are burned
-    /// @param contributor The address that contributed the tokens being burned
-    /// @param amount The amount of VVV tokens burned
-    /// @param totalBurned The new total amount burned from this mind
-    /// @param contributorTotal The new total amount burned by this contributor
     event Burn(
         address indexed contributor,
         uint256 amount,
-        uint256 totalBurned,
-        uint256 contributorTotal
+        uint256 totalBurned
     );
 
     /// @notice Event emitted when ownership is transferred
-    /// @param previousOwner The previous owner address
-    /// @param newOwner The new owner address
     event OwnerTransferred(
         address indexed previousOwner,
         address indexed newOwner
     );
 
-    /// @notice Event emitted when non-VVV tokens are emergency withdrawn
-    /// @param token The token contract address
-    /// @param amount The amount withdrawn
-    /// @param to The recipient address
+    /// @notice Event emitted when tokens are withdrawn via emergencyWithdraw
     event EmergencyWithdrawal(
         address indexed token,
         uint256 amount,
@@ -85,11 +82,8 @@ contract VeniceMind is
     /// @notice Error thrown when trying to burn zero tokens
     error NoTokensToBurn();
 
-    /// @notice Error thrown when trying to withdraw VVV tokens
-    error CannotWithdrawVVV();
-
-    /// @notice Error thrown when trying to initialize an already initialized contract
-    error AlreadyInitialized();
+    /// @notice Error thrown when attempting to deposit zero tokens
+    error ZeroAmount();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -97,10 +91,9 @@ contract VeniceMind is
     }
 
     /**
-     * @notice Initializes the clone with VVV token and owner
-     * @dev Can only be called once per clone
+     * @notice Initializes the clone with token and ownership configuration
      * @param _vvvToken The VVV token contract address
-     * @param _owner The initial owner of this mind contract
+     * @param _owner The initial owner of the mind
      */
     function initialize(
         address _vvvToken,
@@ -110,98 +103,40 @@ contract VeniceMind is
         require(_owner != address(0), "Owner address cannot be zero");
 
         __Ownable_init(_owner);
-        __ReentrancyGuard_init();
-        initialized = true;
+        reentrancyGuardInit();
         vvvToken = IERC20(_vvvToken);
     }
 
     /**
-     * @notice Burns all VVV tokens held by this contract
-     * @dev Only the owner can call this function
-     * @dev Uses reentrancy guard for security
-     * @dev Records the burn amount for accounting purposes
+     * @notice Deposits VVV tokens for the caller and updates contribution totals
+     * @param amount The amount of VVV tokens to deposit
+     */
+    function deposit(uint256 amount) external nonReentrant {
+        _deposit(msg.sender, amount);
+    }
+
+    /**
+     * @notice Burns the entire VVV balance held by this mind
+     * @dev Sends the full balance to the canonical burn address and updates running totals
      */
     function burn() external onlyOwner nonReentrant {
-        // Cache token address to save gas
         IERC20 token = vvvToken;
         uint256 balance = token.balanceOf(address(this));
-
         if (balance == 0) {
             revert NoTokensToBurn();
         }
 
-        // For accounting purposes, we attribute the burn to the caller
-        address contributor = msg.sender;
-
-        // Update accounting
+        token.safeTransfer(BURN_ADDRESS, balance);
         totalBurned += balance;
 
-        // Track contributor and update their burned amount
-        uint256 newContributorTotal;
-        if (!isContributor[contributor]) {
-            contributors.push(contributor);
-            isContributor[contributor] = true;
-            newContributorTotal = balance;
-        } else {
-            newContributorTotal = burnedBy[contributor] + balance;
-        }
-        burnedBy[contributor] = newContributorTotal;
-
-        // Burn tokens by transferring to burn address
-        bool success = token.transfer(BURN_ADDRESS, balance);
-        require(success, "Burn transfer failed");
-
-        emit Burn(contributor, balance, totalBurned, newContributorTotal);
+        emit Burn(address(0), balance, totalBurned);
     }
 
     /**
-     * @notice Burns VVV tokens and attributes them to a specific contributor
-     * @dev Only the owner can call this function
-     * @dev Uses reentrancy guard for security
-     * @param contributor The address to attribute the burn to
-     */
-    function burnFor(address contributor) external onlyOwner nonReentrant {
-        require(
-            contributor != address(0),
-            "Contributor address cannot be zero"
-        );
-
-        // Cache token address to save gas
-        IERC20 token = vvvToken;
-        uint256 balance = token.balanceOf(address(this));
-
-        if (balance == 0) {
-            revert NoTokensToBurn();
-        }
-
-        // Update accounting
-        totalBurned += balance;
-
-        // Track contributor and update their burned amount
-        uint256 newContributorTotal;
-        if (!isContributor[contributor]) {
-            contributors.push(contributor);
-            isContributor[contributor] = true;
-            newContributorTotal = balance;
-        } else {
-            newContributorTotal = burnedBy[contributor] + balance;
-        }
-        burnedBy[contributor] = newContributorTotal;
-
-        // Burn tokens by transferring to burn address
-        bool success = token.transfer(BURN_ADDRESS, balance);
-        require(success, "Burn transfer failed");
-
-        emit Burn(contributor, balance, totalBurned, newContributorTotal);
-    }
-
-    /**
-     * @notice Emergency withdrawal of non-VVV tokens
-     * @dev Only the owner can call this function
-     * @dev Cannot withdraw VVV tokens
-     * @dev Uses reentrancy guard for additional security
-     * @param token The token contract address to withdraw
-     * @param to The recipient address
+     * @notice Performs an emergency withdrawal of non-VVV tokens
+     * @dev Used to recover mistakenly sent ERC20s other than VVV
+     * @param token The address of the ERC20 to withdraw
+     * @param to The recipient that should receive the recovered tokens
      */
     function emergencyWithdraw(
         address token,
@@ -209,11 +144,11 @@ contract VeniceMind is
     ) external onlyOwner nonReentrant {
         require(token != address(0), "Token address cannot be zero");
         require(to != address(0), "Recipient address cannot be zero");
+
         require(token != address(vvvToken), "Cannot withdraw VVV tokens");
 
         IERC20 tokenContract = IERC20(token);
         uint256 amount = tokenContract.balanceOf(address(this));
-
         if (amount > 0) {
             tokenContract.safeTransfer(to, amount);
             emit EmergencyWithdrawal(token, amount, to);
@@ -221,32 +156,32 @@ contract VeniceMind is
     }
 
     /**
-     * @notice Get the list of all contributors
-     * @return Array of contributor addresses
+     * @notice Returns the list of all contributors who have ever deposited
+     * @return The array of contributor addresses
      */
     function getContributors() external view returns (address[] memory) {
         return contributors;
     }
 
     /**
-     * @notice Get the number of contributors
-     * @return The number of unique contributors
+     * @notice Returns the number of unique contributors
+     * @return The count of addresses in the contributor set
      */
     function getContributorCount() external view returns (uint256) {
         return contributors.length;
     }
 
     /**
-     * @notice Get the current VVV balance of this contract
-     * @return The current VVV token balance
+     * @notice Returns the current VVV balance held by this mind
+     * @return The balance of VVV tokens
      */
     function getVVVBalance() external view returns (uint256) {
         return vvvToken.balanceOf(address(this));
     }
 
     /**
-     * @notice Override transferOwnership to emit custom event
-     * @param newOwner The new owner address
+     * @notice Transfers mind ownership and emits the custom OwnerTransferred event
+     * @param newOwner The address that should receive ownership
      */
     function transferOwnership(address newOwner) public override onlyOwner {
         require(newOwner != address(0), "New owner cannot be zero address");
@@ -255,7 +190,34 @@ contract VeniceMind is
         emit OwnerTransferred(previousOwner, newOwner);
     }
 
+    /**
+     * @notice Internal helper that pulls VVV from a contributor and records their total contributions
+     * @param contributor The address providing VVV
+     * @param amount The amount of VVV to transfer and account for
+     */
+    function _deposit(address contributor, uint256 amount) private {
+        if (amount == 0) {
+            revert ZeroAmount();
+        }
+
+        IERC20 token = vvvToken;
+        token.safeTransferFrom(contributor, address(this), amount);
+
+        if (!isContributor[contributor]) {
+            contributors.push(contributor);
+            isContributor[contributor] = true;
+        }
+
+        uint256 newTotal = contributedBy[contributor] + amount;
+        contributedBy[contributor] = newTotal;
+
+        emit Deposit(contributor, amount, newTotal);
+    }
+
+    /**
+     * @inheritdoc UUPSUpgradeable
+     */
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

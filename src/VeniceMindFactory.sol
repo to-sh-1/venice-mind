@@ -2,12 +2,8 @@
 pragma solidity ^0.8.24;
 
 import {VeniceMind} from "./VeniceMind.sol";
-import {
-    Initializable
-} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {
-    OwnableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {
     ReentrancyGuardUpgradeable
 } from "./utils/ReentrancyGuardUpgradeable.sol";
@@ -109,10 +105,10 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Initializes the factory contract
-     * @param _vvvToken The VVV token contract address
-     * @param _owner The initial owner of the factory
-     * @param _mindImplementation The VeniceMind implementation address
+     * @notice Initializes the factory with token, owner, and implementation addresses
+     * @param _vvvToken The ERC20 token address that all minds will accept
+     * @param _owner The owner (typically Venice) with administrative powers
+     * @param _mindImplementation The deployed implementation logic contract for minds
      */
     function initialize(
         address _vvvToken,
@@ -127,17 +123,16 @@ contract VeniceMindFactory is
         );
 
         __Ownable_init(_owner);
-        __ReentrancyGuard_init();
+        reentrancyGuardInit();
         vvvToken = _vvvToken;
         mindImplementation = _mindImplementation;
     }
 
     /**
-     * @notice Creates a new mind burn contract
-     * @dev Uses minimal proxy clone for gas efficiency
-     * @param metadata Optional metadata for the mind
-     * @return mindId The ID of the created mind
-     * @return mindAddress The address of the created mind contract
+     * @notice Creates a new upgradeable mind instance and registers it
+     * @param metadata Optional metadata string describing the mind
+     * @return mindId The numeric identifier assigned to the new mind
+     * @return mindAddress The address of the deployed proxy contract
      */
     function createMind(
         string calldata metadata
@@ -175,9 +170,8 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Burns all VVV tokens from a specific mind
-     * @dev Only the factory owner can call this function
-     * @param mindId The ID of the mind to burn tokens from
+     * @notice Burns the full VVV balance from a specific mind
+     * @param mindId The identifier of the mind to burn
      */
     function burnFromMind(uint256 mindId) external onlyOwner nonReentrant {
         MindInfo storage mind = minds[mindId];
@@ -208,10 +202,8 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Burns all VVV tokens from all minds in one transaction
-     * @dev Only the owner can call this function
-     * @dev Uses reentrancy guard for security
-     * @dev WARNING: May exceed gas limits with many minds. Use burnFromMind for individual minds if needed.
+     * @notice Iterates all minds and burns their balances where possible
+     * @dev Gas usage scales with the number of minds and balances
      */
     function burnFromAllMinds() external onlyOwner nonReentrant {
         uint256 length = mindIds.length;
@@ -254,10 +246,9 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Updates the allowlist for mind creation
-     * @dev Only the owner can call this function
-     * @param account The account address to update
-     * @param allowed Whether the account is allowed to create minds
+     * @notice Adds or removes an account from the mind creation allowlist
+     * @param account The address to update
+     * @param allowed Boolean indicating allowlist status
      */
     function updateAllowlist(address account, bool allowed) external onlyOwner {
         if (allowlist[account] == allowed) {
@@ -268,9 +259,8 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Enables or disables the allowlist
-     * @dev Only the owner can call this function
-     * @param enabled Whether to enable the allowlist
+     * @notice Enables or disables enforcement of the allowlist
+     * @param enabled True to enable or false to disable the allowlist
      */
     function toggleAllowlist(bool enabled) external onlyOwner {
         if (allowlistEnabled == enabled) {
@@ -281,9 +271,9 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Get information about a specific mind
-     * @param mindId The ID of the mind
-     * @return mindInfo The mind information struct
+     * @notice Returns the recorded information for a specific mind
+     * @param mindId The identifier of the mind to query
+     * @return mindInfo The stored struct with metadata and totals
      */
     function getMindInfo(
         uint256 mindId
@@ -292,8 +282,8 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Get all mind IDs
-     * @return Array of all mind IDs
+     * @notice Returns the list of all mind identifiers
+     * @return The array of mind IDs
      */
     function getMindIds() external view returns (uint256[] memory) {
         return mindIds;
@@ -308,9 +298,9 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Get the total burned amount for a specific mind
-     * @param mindId The ID of the mind
-     * @return The total amount burned from this mind
+     * @notice Returns the total burned amount tracked for a mind
+     * @param mindId The identifier of the mind
+     * @return The aggregate burned amount recorded for that mind
      */
     function getMindTotalBurned(
         uint256 mindId
@@ -320,11 +310,11 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Get the total burned amount by a specific contributor across all minds
-     * @param contributor The contributor address
-     * @return total The total amount burned by this contributor
+     * @notice Sums the contributions of an address across all minds
+     * @param contributor The address whose contributions should be aggregated
+     * @return total The total recorded contribution amount
      */
-    function getTotalBurnedBy(
+    function getTotalContributedBy(
         address contributor
     ) external view returns (uint256 total) {
         uint256 length = mindIds.length;
@@ -333,14 +323,14 @@ contract VeniceMindFactory is
             // Cache mind address to save storage read
             address mindAddr = minds[mindId].mindAddress;
             VeniceMind mindContract = VeniceMind(mindAddr);
-            total += mindContract.burnedBy(contributor);
+            total += mindContract.contributedBy(contributor);
         }
     }
 
     /**
-     * @notice Get the current VVV balance of a specific mind
-     * @param mindId The ID of the mind
-     * @return The current VVV balance of the mind
+     * @notice Retrieves the live VVV balance for a specific mind contract
+     * @param mindId The identifier of the mind to query
+     * @return The current VVV token balance at the mind address
      */
     function getMindVVVBalance(uint256 mindId) external view returns (uint256) {
         address mindAddr = minds[mindId].mindAddress;
@@ -350,8 +340,8 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Get the current VVV balance across all minds
-     * @return total The total VVV balance across all minds
+     * @notice Aggregates the VVV balances across all minds
+     * @return total The sum of VVV held by every mind
      */
     function getTotalVVVBalance() external view returns (uint256 total) {
         uint256 length = mindIds.length;
@@ -365,10 +355,9 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Transfer ownership of a mind to a multisig
-     * @dev Only the factory owner can call this function
-     * @param mindId The ID of the mind
-     * @param newOwner The new owner address (multisig)
+     * @notice Transfers ownership of a specific mind proxy to a new address
+     * @param mindId The identifier of the mind to transfer
+     * @param newOwner The address that should become the owner
      */
     function transferMindOwnership(
         uint256 mindId,
@@ -383,11 +372,10 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Emergency withdrawal of non-VVV tokens from a specific mind
-     * @dev Only the owner can call this function
-     * @param mindId The ID of the mind
-     * @param token The token contract address to withdraw
-     * @param to The recipient address
+     * @notice Executes a non-VVV emergency withdrawal on behalf of a mind
+     * @param mindId The identifier of the mind from which to withdraw
+     * @param token The token address to withdraw
+     * @param to The recipient of the withdrawn tokens
      */
     function emergencyWithdrawFromMind(
         uint256 mindId,
@@ -400,7 +388,10 @@ contract VeniceMindFactory is
         mindContract.emergencyWithdraw(token, to);
     }
 
+    /**
+     * @inheritdoc UUPSUpgradeable
+     */
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[50] private __gap;
+    uint256[50] private _gap;
 }

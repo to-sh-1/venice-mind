@@ -1,13 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test, console} from "forge-std/Test.sol";
+import {Test} from "forge-std/Test.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindBurnTest is Test {
     VeniceMind public mindBurn;
@@ -17,21 +14,9 @@ contract VeniceMindBurnTest is Test {
     address public user2;
     address public user3;
 
-    event Burn(
-        address indexed contributor,
-        uint256 amount,
-        uint256 totalBurned,
-        uint256 contributorTotal
-    );
-    event OwnerTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
-    event EmergencyWithdrawal(
-        address indexed token,
-        uint256 amount,
-        address indexed to
-    );
+    event Burn(address indexed contributor, uint256 amount, uint256 totalBurned);
+    event OwnerTransferred(address indexed previousOwner, address indexed newOwner);
+    event EmergencyWithdrawal(address indexed token, uint256 amount, address indexed to);
 
     function setUp() public {
         owner = makeAddr("owner");
@@ -44,11 +29,7 @@ contract VeniceMindBurnTest is Test {
 
         // Deploy upgradeable mind contract
         VeniceMind mindImpl = new VeniceMind();
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMind.initialize.selector,
-            address(vvvToken),
-            owner
-        );
+        bytes memory initData = abi.encodeWithSelector(VeniceMind.initialize.selector, address(vvvToken), owner);
         ERC1967Proxy proxy = new ERC1967Proxy(address(mindImpl), initData);
         mindBurn = VeniceMind(address(proxy));
 
@@ -57,6 +38,13 @@ contract VeniceMindBurnTest is Test {
         vvvToken.mint(user1, 1000e18);
         vvvToken.mint(user2, 1000e18);
         vvvToken.mint(user3, 1000e18);
+        vm.stopPrank();
+    }
+
+    function _deposit(address contributor, uint256 amount) internal {
+        vm.startPrank(contributor);
+        vvvToken.approve(address(mindBurn), amount);
+        mindBurn.deposit(amount);
         vm.stopPrank();
     }
 
@@ -71,79 +59,48 @@ contract VeniceMindBurnTest is Test {
     function testDepositAndBurn() public {
         uint256 depositAmount = 100e18;
 
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
+        _deposit(user1, depositAmount);
 
         assertEq(mindBurn.getVVVBalance(), depositAmount);
         assertEq(mindBurn.totalBurned(), 0);
+        assertEq(mindBurn.contributedBy(user1), depositAmount);
 
         // Owner burns the tokens
         vm.expectEmit(true, false, false, true);
-        emit Burn(owner, depositAmount, depositAmount, depositAmount);
+        emit Burn(address(0), depositAmount, depositAmount);
 
         vm.prank(owner);
         mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
         assertEq(mindBurn.totalBurned(), depositAmount);
-        assertEq(mindBurn.burnedBy(owner), depositAmount);
+        assertEq(mindBurn.contributedBy(user1), depositAmount);
         assertEq(mindBurn.getContributorCount(), 1);
     }
 
-    function testBurnForSpecificContributor() public {
+    function testAnonymousTransferIsBurned() public {
         uint256 depositAmount = 100e18;
+        uint256 anonymousAmount = 50e18;
 
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
+        _deposit(user1, depositAmount);
 
-        // Owner burns the tokens and attributes to user1
+        vm.prank(owner);
+        vvvToken.mint(owner, anonymousAmount);
+        vm.prank(owner);
+        bool success = vvvToken.transfer(address(mindBurn), anonymousAmount);
+        assertTrue(success);
+
+        assertEq(vvvToken.balanceOf(address(mindBurn)), depositAmount + anonymousAmount);
+
         vm.expectEmit(true, false, false, true);
-        emit Burn(user1, depositAmount, depositAmount, depositAmount);
+        emit Burn(address(0), depositAmount + anonymousAmount, depositAmount + anonymousAmount);
 
         vm.prank(owner);
-        mindBurn.burnFor(user1);
+        mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
-        assertEq(mindBurn.totalBurned(), depositAmount);
-        assertEq(mindBurn.burnedBy(user1), depositAmount);
-        assertEq(mindBurn.getContributorCount(), 1);
-    }
-
-    function testMultipleBurns() public {
-        uint256 deposit1 = 100e18;
-        uint256 deposit2 = 50e18;
-
-        // User1 deposits first batch
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), deposit1);
-        vvvToken.transfer(address(mindBurn), deposit1);
-        vm.stopPrank();
-
-        // Owner burns first batch
-        vm.prank(owner);
-        mindBurn.burnFor(user1);
-
-        // User2 deposits second batch
-        vm.startPrank(user2);
-        vvvToken.approve(address(mindBurn), deposit2);
-        vvvToken.transfer(address(mindBurn), deposit2);
-        vm.stopPrank();
-
-        // Owner burns second batch
-        vm.prank(owner);
-        mindBurn.burnFor(user2);
-
-        assertEq(mindBurn.getVVVBalance(), 0);
-        assertEq(mindBurn.totalBurned(), deposit1 + deposit2);
-        assertEq(mindBurn.burnedBy(user1), deposit1);
-        assertEq(mindBurn.burnedBy(user2), deposit2);
-        assertEq(mindBurn.getContributorCount(), 2);
+        assertEq(mindBurn.totalBurned(), depositAmount + anonymousAmount);
+        assertEq(mindBurn.contributedBy(user1), depositAmount);
     }
 
     function testBurnWithZeroBalance() public {
@@ -152,46 +109,14 @@ contract VeniceMindBurnTest is Test {
         mindBurn.burn();
     }
 
-    function testBurnForZeroAddress() public {
-        uint256 depositAmount = 100e18;
-
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
-
-        vm.expectRevert("Contributor address cannot be zero");
-        vm.prank(owner);
-        mindBurn.burnFor(address(0));
-    }
-
     function testOnlyOwnerCanBurn() public {
         uint256 depositAmount = 100e18;
 
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
+        _deposit(user1, depositAmount);
 
         vm.expectRevert();
         vm.prank(user1);
         mindBurn.burn();
-    }
-
-    function testOnlyOwnerCanBurnFor() public {
-        uint256 depositAmount = 100e18;
-
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
-
-        vm.expectRevert();
-        vm.prank(user1);
-        mindBurn.burnFor(user1);
     }
 
     function testEmergencyWithdraw() public {
@@ -219,11 +144,7 @@ contract VeniceMindBurnTest is Test {
     function testCannotEmergencyWithdrawVVV() public {
         uint256 depositAmount = 100e18;
 
-        // User1 deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
+        _deposit(user1, depositAmount);
 
         vm.expectRevert("Cannot withdraw VVV tokens");
         vm.prank(owner);
@@ -260,28 +181,22 @@ contract VeniceMindBurnTest is Test {
         uint256 deposit1 = 100e18;
         uint256 deposit2 = 50e18;
 
-        // User1 deposits and burns
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), deposit1);
-        vvvToken.transfer(address(mindBurn), deposit1);
-        vm.stopPrank();
+        _deposit(user1, deposit1);
 
         vm.prank(owner);
-        mindBurn.burnFor(user1);
+        mindBurn.burn();
 
-        // User2 deposits and burns
-        vm.startPrank(user2);
-        vvvToken.approve(address(mindBurn), deposit2);
-        vvvToken.transfer(address(mindBurn), deposit2);
-        vm.stopPrank();
+        _deposit(user2, deposit2);
 
         vm.prank(owner);
-        mindBurn.burnFor(user2);
+        mindBurn.burn();
 
         address[] memory contributors = mindBurn.getContributors();
         assertEq(contributors.length, 2);
         assertEq(contributors[0], user1);
         assertEq(contributors[1], user2);
+        assertEq(mindBurn.contributedBy(user1), deposit1);
+        assertEq(mindBurn.contributedBy(user2), deposit2);
     }
 
     function testReentrancyProtection() public {
@@ -289,10 +204,7 @@ contract VeniceMindBurnTest is Test {
         // For now, we'll just verify the nonReentrant modifier is present
         uint256 depositAmount = 100e18;
 
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), depositAmount);
-        vvvToken.transfer(address(mindBurn), depositAmount);
-        vm.stopPrank();
+        _deposit(user1, depositAmount);
 
         // Should not revert due to reentrancy
         vm.prank(owner);
@@ -308,17 +220,14 @@ contract VeniceMindBurnTest is Test {
         vm.stopPrank();
 
         // User1 deposits tokens
-        vm.startPrank(user1);
-        vvvToken.approve(address(mindBurn), amount);
-        vvvToken.transfer(address(mindBurn), amount);
-        vm.stopPrank();
+        _deposit(user1, amount);
 
         // Owner burns tokens
         vm.prank(owner);
-        mindBurn.burnFor(user1);
+        mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
         assertEq(mindBurn.totalBurned(), amount);
-        assertEq(mindBurn.burnedBy(user1), amount);
+        assertEq(mindBurn.contributedBy(user1), amount);
     }
 }

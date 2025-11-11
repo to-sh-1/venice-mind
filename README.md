@@ -18,7 +18,7 @@ A master factory and per mind subcontract system that accepts VVV deposits, allo
 - Holds VVV token address fixed at construction
 - Accepts VVV deposits
 - `burn()` function burns the entire subcontract VVV balance
-- Tracks `totalBurned` and `burnedBy` address
+- Tracks `totalBurned` and cumulative contributions per address (`contributedBy`)
 - Owner controls to set or transfer owner to a Venice multisig
 - Emergency withdrawal for non-VVV tokens
 - Emits `Burn` events with contributor, amount, and running totals

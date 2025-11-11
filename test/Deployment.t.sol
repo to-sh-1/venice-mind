@@ -5,9 +5,7 @@ import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title Deployment Test
@@ -19,20 +17,20 @@ contract DeploymentTest is Test {
     address public owner;
     address public user1;
 
-    function deployFactory(
-        address token,
-        address owner_
-    ) internal returns (VeniceMindFactory) {
+    function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMindFactory.initialize.selector,
-            token,
-            owner_,
-            address(mindImpl)
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
+    }
+
+    function _depositToMind(address contributor, address mindAddress, uint256 amount) internal {
+        vm.startPrank(contributor);
+        vvvToken.approve(mindAddress, amount);
+        VeniceMind(mindAddress).deposit(amount);
+        vm.stopPrank();
     }
 
     function setUp() public {
@@ -99,10 +97,7 @@ contract DeploymentTest is Test {
         (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
 
         // User deposits VVV tokens
-        vm.startPrank(user1);
-        vvvToken.approve(mindAddress, 100e18);
-        vvvToken.transfer(mindAddress, 100e18);
-        vm.stopPrank();
+        _depositToMind(user1, mindAddress, 100e18);
 
         // Verify deposit
         VeniceMind mindContract = VeniceMind(mindAddress);
