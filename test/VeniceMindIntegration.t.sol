@@ -200,15 +200,15 @@ contract VeniceMindIntegrationTest is Test {
     function testOwnershipTransfer() public {
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        (, address mindAddress) = factory.createMind("Test Mind");
 
         VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.owner(), owner);
         assertEq(mindContract.factory(), address(factory));
 
-        // Factory owner transfers ownership to multisig
+        // Mind owner (factory owner) transfers ownership directly
         vm.prank(owner);
-        factory.transferMindOwnership(mindId, multisig);
+        mindContract.transferOwnership(multisig);
 
         assertEq(mindContract.owner(), multisig);
 
@@ -238,11 +238,11 @@ contract VeniceMindIntegrationTest is Test {
 
         // User1 can create mind (in allowlist)
         vm.prank(user1);
-        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
+        factory.createMind("Mind 1");
 
         // User2 can create mind (in allowlist)
         vm.prank(user2);
-        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+        factory.createMind("Mind 2");
 
         // User3 cannot create mind (not in allowlist)
         vm.expectRevert(VeniceMindFactory.NotAllowedToCreateMind.selector);
@@ -255,7 +255,7 @@ contract VeniceMindIntegrationTest is Test {
     function testEmergencyWithdrawal() public {
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        (, address mindAddress) = factory.createMind("Test Mind");
 
         // Deploy a mock ERC20 token
         MockVVV otherToken = new MockVVV(owner);
@@ -267,13 +267,11 @@ contract VeniceMindIntegrationTest is Test {
 
         assertEq(otherToken.balanceOf(mindAddress), 100e18);
 
-        // Factory owner emergency withdraws other tokens
+        VeniceMind mindContract = VeniceMind(mindAddress);
+
+        // Mind owner (factory owner) performs the withdrawal directly
         vm.prank(owner);
-        factory.emergencyWithdrawFromMind(
-            mindId,
-            address(otherToken),
-            multisig
-        );
+        mindContract.emergencyWithdraw(address(otherToken), multisig);
 
         assertEq(otherToken.balanceOf(mindAddress), 0);
         assertEq(otherToken.balanceOf(multisig), 100e18);

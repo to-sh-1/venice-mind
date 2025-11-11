@@ -52,38 +52,19 @@ factory.burnFromAllMinds();
 
 **Access:** Only factory owner (Venice)
 
-### 3. Transferring Mind Ownership to Multisig
+### 3. Managing Individual Minds
 
-To transfer ownership of a mind to a Venice multisig:
-
-```solidity
-factory.transferMindOwnership(mindId, multisigAddress);
-```
-
-**Parameters:**
-
-- `mindId`: ID of the mind to transfer
-- `multisigAddress`: Address of the multisig
-
-**Access:** Only factory owner (Venice)
-
-### 4. Emergency Withdrawal
-
-To recover non-VVV tokens from a mind:
+Once a mind is deployed, the mind contract itself (not the factory) controls privileged actions like ownership transfers or emergency withdrawals. Use the recorded `mindAddress` to interact directly:
 
 ```solidity
-factory.emergencyWithdrawFromMind(mindId, tokenAddress, recipientAddress);
+VeniceMind mind = VeniceMind(mindAddress);
+mind.transferOwnership(multisigAddress);           // Move control to a multisig
+mind.emergencyWithdraw(tokenAddress, recipient);   // Recover non-VVV tokens
 ```
 
-**Parameters:**
+**Access:** Only the current mind owner (initially the factory owner)
 
-- `mindId`: ID of the mind
-- `tokenAddress`: Address of the token to withdraw
-- `recipientAddress`: Address to send tokens to
-
-**Access:** Only factory owner (Venice)
-
-### 5. Allowlist Management
+### 4. Allowlist Management
 
 #### Enable/disable allowlist:
 

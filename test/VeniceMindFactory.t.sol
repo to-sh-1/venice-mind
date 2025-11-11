@@ -8,6 +8,9 @@ import {MockVVV} from "../src/MockVVV.sol";
 import {
     ERC1967Proxy
 } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    OwnableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract VeniceMindFactoryTest is Test {
     VeniceMindFactory public factory;
@@ -78,7 +81,7 @@ contract VeniceMindFactoryTest is Test {
         return VeniceMindFactory(address(proxy));
     }
 
-    function testInitialState() public {
+    function testInitialState() public view {
         assertEq(factory.owner(), owner);
         assertEq(factory.vvvToken(), address(vvvToken));
         assertEq(factory.globalTotalBurned(), 0);
@@ -118,10 +121,10 @@ contract VeniceMindFactoryTest is Test {
 
     function testCreateMultipleMinds() public {
         vm.prank(user1);
-        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
+        (uint256 mindId1, ) = factory.createMind("Mind 1");
 
         vm.prank(user2);
-        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+        (uint256 mindId2, ) = factory.createMind("Mind 2");
 
         assertEq(mindId1, 1);
         assertEq(mindId2, 2);
@@ -275,10 +278,10 @@ contract VeniceMindFactoryTest is Test {
         assertEq(factory.getTotalContributedBy(user2), deposit2);
     }
 
-    function testEmergencyWithdrawFromMind() public {
+    function testMindOwnerCanEmergencyWithdraw() public {
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        (, address mindAddress) = factory.createMind("Test Mind");
 
         // Deploy a mock ERC20 token
         MockVVV otherToken = new MockVVV(owner);
@@ -290,9 +293,10 @@ contract VeniceMindFactoryTest is Test {
 
         assertEq(otherToken.balanceOf(mindAddress), 50e18);
 
-        // Factory owner emergency withdraws other tokens
+        // Mind owner (factory owner) emergency withdraws other tokens directly
+        VeniceMind mindContract = VeniceMind(mindAddress);
         vm.prank(owner);
-        factory.emergencyWithdrawFromMind(mindId, address(otherToken), user1);
+        mindContract.emergencyWithdraw(address(otherToken), user1);
 
         assertEq(otherToken.balanceOf(mindAddress), 0);
         assertEq(otherToken.balanceOf(user1), 50e18);
@@ -300,7 +304,7 @@ contract VeniceMindFactoryTest is Test {
 
     function testOnlyOwnerCanEmergencyWithdraw() public {
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        (, address mindAddress) = factory.createMind("Test Mind");
 
         MockVVV otherToken = new MockVVV(owner);
 
@@ -308,9 +312,16 @@ contract VeniceMindFactoryTest is Test {
         otherToken.mint(mindAddress, 50e18);
         vm.stopPrank();
 
-        vm.expectRevert();
+        VeniceMind mindContract = VeniceMind(mindAddress);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                OwnableUpgradeable.OwnableUnauthorizedAccount.selector,
+                user1
+            )
+        );
         vm.prank(user1);
-        factory.emergencyWithdrawFromMind(mindId, address(otherToken), user1);
+        mindContract.emergencyWithdraw(address(otherToken), user1);
     }
 
     function testBurnFromNonExistentMind() public {
@@ -319,7 +330,7 @@ contract VeniceMindFactoryTest is Test {
         factory.burnFromMind(999);
     }
 
-    function testGetMindInfoNonExistent() public {
+    function testGetMindInfoNonExistent() public view {
         VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(999);
         assertEq(mindInfo.mindAddress, address(0));
     }

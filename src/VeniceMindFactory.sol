@@ -360,40 +360,6 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Transfers ownership of a specific mind proxy to a new address
-     * @param mindId The identifier of the mind to transfer
-     * @param newOwner The address that should become the owner
-     */
-    function transferMindOwnership(
-        uint256 mindId,
-        address newOwner
-    ) external onlyOwner {
-        address mindAddr = minds[mindId].mindAddress;
-        require(mindAddr != address(0), "Mind does not exist");
-        require(newOwner != address(0), "New owner cannot be zero address");
-
-        VeniceMind mindContract = VeniceMind(mindAddr);
-        mindContract.transferOwnership(newOwner);
-    }
-
-    /**
-     * @notice Executes a non-VVV emergency withdrawal on behalf of a mind
-     * @param mindId The identifier of the mind from which to withdraw
-     * @param token The token address to withdraw
-     * @param to The recipient of the withdrawn tokens
-     */
-    function emergencyWithdrawFromMind(
-        uint256 mindId,
-        address token,
-        address to
-    ) external onlyOwner {
-        address mindAddr = minds[mindId].mindAddress;
-        require(mindAddr != address(0), "Mind does not exist");
-        VeniceMind mindContract = VeniceMind(mindAddr);
-        mindContract.emergencyWithdraw(token, to);
-    }
-
-    /**
      * @inheritdoc UUPSUpgradeable
      */
     function _authorizeUpgrade(address) internal override onlyOwner {}

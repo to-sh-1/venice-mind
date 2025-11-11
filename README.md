@@ -143,7 +143,15 @@ factory.burnFromAllMinds();
 ### Transferring Ownership to Multisig
 
 ```solidity
-factory.transferMindOwnership(mindId, multisigAddress);
+VeniceMind mind = VeniceMind(mindAddress);
+mind.transferOwnership(multisigAddress);
+```
+
+### Recovering Non-VVV Tokens
+
+```solidity
+VeniceMind mind = VeniceMind(mindAddress);
+mind.emergencyWithdraw(tokenAddress, recipientAddress);
 ```
 
 ## Security
@@ -151,7 +159,7 @@ factory.transferMindOwnership(mindId, multisigAddress);
 - **Access Control**: Only factory owner can burn tokens and manage system
 - **Reentrancy Protection**: All burn functions protected against reentrancy
 - **Safe ERC20**: Uses OpenZeppelin's SafeERC20 for token operations
-- **Emergency Withdrawal**: Can recover non-VVV tokens if needed
+- **Emergency Withdrawal**: Mind owners can recover non-VVV tokens directly when needed
 - **Input Validation**: Comprehensive parameter validation
 
 ## Gas Optimization
