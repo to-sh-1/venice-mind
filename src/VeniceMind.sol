@@ -36,6 +36,9 @@ contract VeniceMind is
     /// @notice Total amount of VVV burned from this mind
     uint256 public totalBurned;
 
+    /// @notice Factory contract that deployed this mind (authorized for certain operations)
+    address public factory;
+
     /// @notice Burn address constant
     address private constant BURN_ADDRESS = address(0);
 
@@ -82,6 +85,9 @@ contract VeniceMind is
     /// @notice Error thrown when trying to burn zero tokens
     error NoTokensToBurn();
 
+    /// @notice Error thrown when an unauthorized caller attempts a restricted action
+    error UnauthorizedCaller();
+
     /// @notice Error thrown when attempting to deposit zero tokens
     error ZeroAmount();
 
@@ -94,17 +100,21 @@ contract VeniceMind is
      * @notice Initializes the clone with token and ownership configuration
      * @param _vvvToken The VVV token contract address
      * @param _owner The initial owner of the mind
+     * @param _factory The factory contract authorized to manage this mind
      */
     function initialize(
         address _vvvToken,
-        address _owner
+        address _owner,
+        address _factory
     ) external initializer {
         require(_vvvToken != address(0), "VVV token address cannot be zero");
         require(_owner != address(0), "Owner address cannot be zero");
+        require(_factory != address(0), "Factory address cannot be zero");
 
         __Ownable_init(_owner);
         reentrancyGuardInit();
         vvvToken = IERC20(_vvvToken);
+        factory = _factory;
     }
 
     /**
@@ -119,7 +129,7 @@ contract VeniceMind is
      * @notice Burns the entire VVV balance held by this mind
      * @dev Sends the full balance to the canonical burn address and updates running totals
      */
-    function burn() external onlyOwner nonReentrant {
+    function burn() external onlyOwnerOrFactory nonReentrant {
         IERC20 token = vvvToken;
         uint256 balance = token.balanceOf(address(this));
         if (balance == 0) {
@@ -219,5 +229,16 @@ contract VeniceMind is
      */
     function _authorizeUpgrade(address) internal override onlyOwner {}
 
-    uint256[50] private _gap;
+    /**
+     * @dev Restricts calls to the owner or the deploying factory contract
+     */
+    modifier onlyOwnerOrFactory() {
+        address sender = msg.sender;
+        if (sender != owner() && sender != factory) {
+            revert UnauthorizedCaller();
+        }
+        _;
+    }
+
+    uint256[49] private _gap;
 }

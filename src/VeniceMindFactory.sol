@@ -2,8 +2,12 @@
 pragma solidity ^0.8.24;
 
 import {VeniceMind} from "./VeniceMind.sol";
-import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {
+    Initializable
+} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {
+    OwnableUpgradeable
+} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {
     ReentrancyGuardUpgradeable
 } from "./utils/ReentrancyGuardUpgradeable.sol";
@@ -148,6 +152,7 @@ contract VeniceMindFactory is
         bytes memory initData = abi.encodeWithSelector(
             VeniceMind.initialize.selector,
             vvvToken,
+            owner(),
             address(this)
         );
         mindAddress = address(new ERC1967Proxy(mindImplementation, initData));
@@ -216,8 +221,8 @@ contract VeniceMindFactory is
 
             VeniceMind mindContract = VeniceMind(mindAddr);
 
-            // Skip minds that are no longer owned by the factory
-            if (mindContract.owner() != address(this)) {
+            // Skip minds that are no longer managed by this factory
+            if (mindContract.factory() != address(this)) {
                 continue;
             }
 

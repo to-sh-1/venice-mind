@@ -5,7 +5,9 @@ import {Test, console} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {
+    ERC1967Proxy
+} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title Deployment Test
@@ -17,16 +19,27 @@ contract DeploymentTest is Test {
     address public owner;
     address public user1;
 
-    function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
+    function deployFactory(
+        address token,
+        address owner_
+    ) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector,
+            token,
+            owner_,
+            address(mindImpl)
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
 
-    function _depositToMind(address contributor, address mindAddress, uint256 amount) internal {
+    function _depositToMind(
+        address contributor,
+        address mindAddress,
+        uint256 amount
+    ) internal {
         vm.startPrank(contributor);
         vvvToken.approve(mindAddress, amount);
         VeniceMind(mindAddress).deposit(amount);
@@ -75,7 +88,8 @@ contract DeploymentTest is Test {
 
         // Verify mind contract
         VeniceMind mindContract = VeniceMind(mindAddress);
-        assertEq(mindContract.owner(), address(factory));
+        assertEq(mindContract.owner(), owner);
+        assertEq(mindContract.factory(), address(factory));
         assertEq(address(mindContract.vvvToken()), address(vvvToken));
 
         console.log("Mind created with ID:", mindId);

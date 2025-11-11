@@ -111,7 +111,8 @@ contract VeniceMindFactoryTest is Test {
 
         // Check that the mind contract is properly initialized
         VeniceMind mindContract = VeniceMind(mindAddress);
-        assertEq(mindContract.owner(), address(factory));
+        assertEq(mindContract.owner(), owner);
+        assertEq(mindContract.factory(), address(factory));
         assertEq(address(mindContract.vvvToken()), address(vvvToken));
     }
 
