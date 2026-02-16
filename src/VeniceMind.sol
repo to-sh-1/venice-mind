@@ -225,6 +225,13 @@ contract VeniceMind is
     }
 
     /**
+     * @notice Disabled to prevent accidental loss of ownership and upgradeability
+     */
+    function renounceOwnership() public pure override {
+        revert("Renounce ownership disabled");
+    }
+
+    /**
      * @inheritdoc UUPSUpgradeable
      */
     function _authorizeUpgrade(address) internal override onlyOwner {}
@@ -240,5 +247,5 @@ contract VeniceMind is
         _;
     }
 
-    uint256[49] private _gap;
+    uint256[50] private _gap;
 }

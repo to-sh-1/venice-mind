@@ -14,14 +14,13 @@ import {
 import {
     UUPSUpgradeable
 } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {Clones} from "@openzeppelin/contracts/proxy/Clones.sol";
 import {
     ERC1967Proxy
 } from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title VeniceMindFactory
- * @dev Master factory that creates mind subcontracts using minimal proxy clones
+ * @dev Master factory that creates mind subcontracts using ERC1967 proxies
  * @notice This contract manages the creation of mind burn contracts and tracks global statistics
  */
 contract VeniceMindFactory is
@@ -30,8 +29,6 @@ contract VeniceMindFactory is
     ReentrancyGuardUpgradeable,
     UUPSUpgradeable
 {
-    using Clones for address;
-
     /// @notice The implementation contract for mind burn contracts
     address public mindImplementation;
 
@@ -94,6 +91,11 @@ contract VeniceMindFactory is
     /// @notice Event emitted when allowlist is enabled/disabled
     /// @param enabled Whether the allowlist is enabled
     event AllowlistToggled(bool enabled);
+
+    /// @notice Event emitted when a mind burn fails during burnFromAllMinds
+    /// @param mindId The ID of the mind whose burn failed
+    /// @param reason The revert reason
+    event MindBurnFailed(uint256 indexed mindId, bytes reason);
 
     /// @notice Error thrown when allowlist is enabled and caller is not allowed
     error NotAllowedToCreateMind();
@@ -222,27 +224,31 @@ contract VeniceMindFactory is
             VeniceMind mindContract = VeniceMind(mindAddr);
 
             // Skip minds that are no longer managed by this factory
-            if (mindContract.factory() != address(this)) {
+            try mindContract.factory() returns (address f) {
+                if (f != address(this)) {
+                    continue;
+                }
+            } catch {
                 continue;
             }
 
-            // Get the actual burned amount from the mind contract
-            uint256 totalBurnedBefore = mindContract.totalBurned();
             uint256 balanceBefore = mindContract.getVVVBalance();
 
             if (balanceBefore > 0) {
-                // Burn the tokens
-                mindContract.burn();
+                uint256 totalBurnedBefore = mindContract.totalBurned();
 
-                // Get the actual burned amount
-                uint256 totalBurnedAfter = mindContract.totalBurned();
-                uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
+                try mindContract.burn() {
+                    uint256 totalBurnedAfter = mindContract.totalBurned();
+                    uint256 actuallyBurned = totalBurnedAfter -
+                        totalBurnedBefore;
 
-                // Update accounting based on what was actually burned
-                currentGlobalTotal += actuallyBurned;
-                mind.totalBurned = totalBurnedAfter; // Sync with actual contract state
+                    currentGlobalTotal += actuallyBurned;
+                    mind.totalBurned = totalBurnedAfter;
 
-                emit GlobalBurn(mindId, actuallyBurned, currentGlobalTotal);
+                    emit GlobalBurn(mindId, actuallyBurned, currentGlobalTotal);
+                } catch (bytes memory reason) {
+                    emit MindBurnFailed(mindId, reason);
+                }
             }
         }
 
@@ -357,6 +363,13 @@ contract VeniceMindFactory is
             VeniceMind mindContract = VeniceMind(mindAddr);
             total += mindContract.getVVVBalance();
         }
+    }
+
+    /**
+     * @notice Disabled to prevent accidental loss of ownership and upgradeability
+     */
+    function renounceOwnership() public pure override {
+        revert("Renounce ownership disabled");
     }
 
     /**
