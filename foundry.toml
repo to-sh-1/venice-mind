@@ -10,7 +10,8 @@ gas_reports = ["*"]
 fuzz = { runs = 1000 }
 invariant = { runs = 256, depth = 15 }
 remappings = [
-  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
+  "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/",
+  "@openzeppelin/contracts-upgradeable/=lib/openzeppelin-contracts-upgradeable/contracts/"
 ]
 
 [profile.ci]
