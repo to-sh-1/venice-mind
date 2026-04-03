@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import {VeniceMind} from "./VeniceMind.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
@@ -13,7 +13,7 @@ import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.s
  * @dev Master factory that creates mind subcontracts using ERC1967 proxies
  * @notice This contract manages the creation of mind burn contracts and tracks global statistics
  */
-contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     /// @notice The implementation contract for mind burn contracts
     address public mindImplementation;
 

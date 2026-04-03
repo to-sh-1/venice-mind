@@ -3,7 +3,7 @@ pragma solidity ^0.8.24;
 
 import {Test} from "forge-std/Test.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
-import {MockVVV} from "../src/MockVVV.sol";
+import {MockVVV} from "./MockVVV.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindBurnTest is Test {

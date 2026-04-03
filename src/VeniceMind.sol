@@ -5,14 +5,14 @@ import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {SafeERC20} from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
 import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 
 /**
  * @title VeniceMind
  * @dev Mind subcontract that tracks VVV deposits and allows the owner to burn accounted balances
  */
-contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using SafeERC20 for IERC20;
 
     /// @notice The VVV token contract address
