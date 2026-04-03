@@ -5,12 +5,8 @@ import {Test} from "forge-std/Test.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {
-    OwnableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 contract VeniceMindFactoryTest is Test {
     VeniceMindFactory public factory;
@@ -20,25 +16,12 @@ contract VeniceMindFactoryTest is Test {
     address public user2;
     address public user3;
 
-    event MindCreated(
-        address indexed creator,
-        uint256 indexed mindId,
-        address indexed mindAddress,
-        string metadata
-    );
-    event GlobalBurn(
-        uint256 indexed mindId,
-        uint256 amount,
-        uint256 globalTotal
-    );
+    event MindCreated(address indexed creator, uint256 indexed mindId, address indexed mindAddress, string metadata);
+    event GlobalBurn(uint256 indexed mindId, uint256 amount, uint256 globalTotal);
     event AllowlistUpdated(address indexed account, bool allowed);
     event AllowlistToggled(bool enabled);
 
-    function _depositToMind(
-        address contributor,
-        address mindAddress,
-        uint256 amount
-    ) internal {
+    function _depositToMind(address contributor, address mindAddress, uint256 amount) internal {
         vm.startPrank(contributor);
         vvvToken.approve(mindAddress, amount);
         VeniceMind(mindAddress).deposit(amount);
@@ -65,18 +48,11 @@ contract VeniceMindFactoryTest is Test {
         vm.stopPrank();
     }
 
-    function deployFactory(
-        address token,
-        address owner_
-    ) internal returns (VeniceMindFactory) {
+    function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMindFactory.initialize.selector,
-            token,
-            owner_,
-            address(mindImpl)
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
@@ -102,9 +78,7 @@ contract VeniceMindFactoryTest is Test {
         assertEq(factory.getMindCount(), 1);
 
         // Check mind info
-        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(
-            mindId
-        );
+        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(mindId);
         assertEq(mindInfo.creator, user1);
         assertEq(mindInfo.mindAddress, mindAddress);
         assertEq(mindInfo.createdAt, block.timestamp);
@@ -120,10 +94,10 @@ contract VeniceMindFactoryTest is Test {
 
     function testCreateMultipleMinds() public {
         vm.prank(user1);
-        (uint256 mindId1, ) = factory.createMind("Mind 1");
+        (uint256 mindId1,) = factory.createMind("Mind 1");
 
         vm.prank(user2);
-        (uint256 mindId2, ) = factory.createMind("Mind 2");
+        (uint256 mindId2,) = factory.createMind("Mind 2");
 
         assertEq(mindId1, 1);
         assertEq(mindId2, 2);
@@ -158,9 +132,7 @@ contract VeniceMindFactoryTest is Test {
         assertEq(factory.globalTotalBurned(), depositAmount);
         assertEq(factory.getMindTotalBurned(mindId), depositAmount);
 
-        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(
-            mindId
-        );
+        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(mindId);
         assertEq(mindInfo.totalBurned, depositAmount);
     }
 
@@ -345,12 +317,7 @@ contract VeniceMindFactoryTest is Test {
 
         VeniceMind mindContract = VeniceMind(mindAddress);
 
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OwnableUpgradeable.OwnableUnauthorizedAccount.selector,
-                user1
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user1));
         vm.prank(user1);
         mindContract.emergencyWithdraw(address(otherToken), user1);
     }
@@ -426,9 +393,7 @@ contract VeniceMindFactoryTest is Test {
         assertEq(mindId, 1);
         assertTrue(mindAddress != address(0));
 
-        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(
-            mindId
-        );
+        VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(mindId);
         assertEq(mindInfo.creator, user1);
         assertEq(mindInfo.metadata, metadata);
     }

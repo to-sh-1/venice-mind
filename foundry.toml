@@ -12,3 +12,7 @@ invariant = { runs = 256, depth = 15 }
 remappings = [
   "@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/"
 ]
+
+[profile.ci]
+fuzz = { runs = 256 }
+invariant = { runs = 256, depth = 15 }

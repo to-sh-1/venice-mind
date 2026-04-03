@@ -38,18 +38,9 @@ contract VerifyScript is Script {
         string[] memory factoryInputs = new string[](5);
         factoryInputs[0] = "forge";
         factoryInputs[1] = "verify-contract";
-        factoryInputs[2] = string(
-            abi.encodePacked(factory, ":VeniceMindFactory")
-        );
+        factoryInputs[2] = string(abi.encodePacked(factory, ":VeniceMindFactory"));
         factoryInputs[3] = "--constructor-args";
-        factoryInputs[4] = string(
-            abi.encodePacked(
-                "0x",
-                vm.toString(vvvToken),
-                "0x",
-                vm.toString(vvvOwner)
-            )
-        );
+        factoryInputs[4] = string(abi.encodePacked("0x", vm.toString(vvvToken), "0x", vm.toString(vvvOwner)));
 
         console.log("Run the following commands to verify contracts:");
         console.log("VVV Token verification:");

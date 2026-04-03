@@ -62,10 +62,7 @@ contract MockVVV is ERC20 {
      * @inheritdoc ERC20
      * @dev Allows transfers to the zero address for burn semantics
      */
-    function transfer(
-        address to,
-        uint256 value
-    ) public override returns (bool) {
+    function transfer(address to, uint256 value) public override returns (bool) {
         address owner_ = _msgSender();
         _transferAllowingZero(owner_, to, value);
         return true;
@@ -75,11 +72,7 @@ contract MockVVV is ERC20 {
      * @inheritdoc ERC20
      * @dev Allows transfers to the zero address for burn semantics
      */
-    function transferFrom(
-        address from,
-        address to,
-        uint256 value
-    ) public override returns (bool) {
+    function transferFrom(address from, address to, uint256 value) public override returns (bool) {
         address spender = _msgSender();
         _spendAllowance(from, spender, value);
         _transferAllowingZero(from, to, value);
@@ -92,11 +85,7 @@ contract MockVVV is ERC20 {
      * @param to The token recipient (may be zero address)
      * @param value The amount being transferred
      */
-    function _transferAllowingZero(
-        address from,
-        address to,
-        uint256 value
-    ) internal {
+    function _transferAllowingZero(address from, address to, uint256 value) internal {
         if (from == address(0)) {
             revert ERC20InvalidSender(address(0));
         }

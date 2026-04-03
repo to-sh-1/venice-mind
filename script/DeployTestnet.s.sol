@@ -5,9 +5,7 @@ import {Script, console} from "forge-std/Script.sol";
 import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title DeployTestnet Script
@@ -30,24 +28,15 @@ contract DeployTestnetScript is Script {
 
         // Deploy VeniceMind implementation
         VeniceMind mindImpl = new VeniceMind();
-        console.log(
-            "VeniceMind implementation deployed at:",
-            address(mindImpl)
-        );
+        console.log("VeniceMind implementation deployed at:", address(mindImpl));
 
         // Deploy factory implementation
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        console.log(
-            "VeniceMindFactory implementation deployed at:",
-            address(factoryImpl)
-        );
+        console.log("VeniceMindFactory implementation deployed at:", address(factoryImpl));
 
         // Deploy factory proxy
         bytes memory initData = abi.encodeWithSelector(
-            VeniceMindFactory.initialize.selector,
-            address(vvvToken),
-            deployer,
-            address(mindImpl)
+            VeniceMindFactory.initialize.selector, address(vvvToken), deployer, address(mindImpl)
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         VeniceMindFactory factory = VeniceMindFactory(address(proxy));

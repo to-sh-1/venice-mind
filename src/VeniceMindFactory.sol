@@ -2,33 +2,18 @@
 pragma solidity ^0.8.24;
 
 import {VeniceMind} from "./VeniceMind.sol";
-import {
-    Initializable
-} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
-import {
-    OwnableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
-import {
-    ReentrancyGuard
-} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import {
-    UUPSUpgradeable
-} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 /**
  * @title VeniceMindFactory
  * @dev Master factory that creates mind subcontracts using ERC1967 proxies
  * @notice This contract manages the creation of mind burn contracts and tracks global statistics
  */
-contract VeniceMindFactory is
-    Initializable,
-    OwnableUpgradeable,
-    ReentrancyGuard,
-    UUPSUpgradeable
-{
+contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable {
     /// @notice The implementation contract for mind burn contracts
     address public mindImplementation;
 
@@ -65,22 +50,13 @@ contract VeniceMindFactory is
     /// @param mindId The unique ID of the mind
     /// @param mindAddress The deployed address of the mind contract
     /// @param metadata Optional metadata for the mind
-    event MindCreated(
-        address indexed creator,
-        uint256 indexed mindId,
-        address indexed mindAddress,
-        string metadata
-    );
+    event MindCreated(address indexed creator, uint256 indexed mindId, address indexed mindAddress, string metadata);
 
     /// @notice Event emitted when a mind burns tokens
     /// @param mindId The ID of the mind that burned tokens
     /// @param amount The amount of tokens burned
     /// @param globalTotal The new global total burned
-    event GlobalBurn(
-        uint256 indexed mindId,
-        uint256 amount,
-        uint256 globalTotal
-    );
+    event GlobalBurn(uint256 indexed mindId, uint256 amount, uint256 globalTotal);
 
     /// @notice Event emitted when the allowlist is updated
     /// @param account The account address
@@ -149,16 +125,13 @@ contract VeniceMindFactory is
      * @param _owner The owner (typically Venice) with administrative powers
      * @param _mindImplementation The deployed implementation logic contract for minds
      */
-    function initialize(
-        address _vvvToken,
-        address _owner,
-        address _mindImplementation
-    ) external initializer {
+    function initialize(address _vvvToken, address _owner, address _mindImplementation) external initializer {
         if (_vvvToken == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
         if (_mindImplementation == address(0)) revert ZeroAddress();
-        if (_mindImplementation.code.length == 0)
+        if (_mindImplementation.code.length == 0) {
             revert InvalidImplementation();
+        }
 
         __Ownable_init(_owner);
         vvvToken = _vvvToken;
@@ -171,9 +144,7 @@ contract VeniceMindFactory is
      * @return mindId The numeric identifier assigned to the new mind
      * @return mindAddress The address of the deployed proxy contract
      */
-    function createMind(
-        string calldata metadata
-    ) external nonReentrant returns (uint256 mindId, address mindAddress) {
+    function createMind(string calldata metadata) external nonReentrant returns (uint256 mindId, address mindAddress) {
         if (allowlistEnabled && !allowlist[msg.sender]) {
             revert NotAllowedToCreateMind();
         }
@@ -182,12 +153,7 @@ contract VeniceMindFactory is
         mindId = ++mindCounter;
 
         // Deploy upgradeable mind proxy with initializer data
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMind.initialize.selector,
-            vvvToken,
-            owner(),
-            address(this)
-        );
+        bytes memory initData = abi.encodeWithSelector(VeniceMind.initialize.selector, vvvToken, owner(), address(this));
         mindAddress = address(new ERC1967Proxy(mindImplementation, initData));
 
         // Store mind information
@@ -216,8 +182,9 @@ contract VeniceMindFactory is
         if (mindAddr == address(0)) revert MindNotFound();
 
         VeniceMind mindContract = VeniceMind(mindAddr);
-        if (mindContract.factory() != address(this))
+        if (mindContract.factory() != address(this)) {
             revert MindNotManagedByFactory();
+        }
 
         uint256 totalBurnedBefore = mindContract.totalBurned();
         uint256 balanceBefore = mindContract.getVVVBalance();
@@ -245,10 +212,7 @@ contract VeniceMindFactory is
      * @param startIndex The index into mindIds to begin from (inclusive)
      * @param batchSize The maximum number of minds to process in this call
      */
-    function burnFromMinds(
-        uint256 startIndex,
-        uint256 batchSize
-    ) external onlyOwner nonReentrant {
+    function burnFromMinds(uint256 startIndex, uint256 batchSize) external onlyOwner nonReentrant {
         if (batchSize == 0) revert ZeroBatchSize();
         uint256 length = mindIds.length;
         if (startIndex >= length) revert StartIndexOutOfBounds();
@@ -281,8 +245,7 @@ contract VeniceMindFactory is
 
                 try mindContract.burn() {
                     uint256 totalBurnedAfter = mindContract.totalBurned();
-                    uint256 actuallyBurned = totalBurnedAfter -
-                        totalBurnedBefore;
+                    uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
 
                     currentGlobalTotal += actuallyBurned;
                     mind.totalBurned = totalBurnedAfter;
@@ -320,21 +283,9 @@ contract VeniceMindFactory is
         if (mindAddr == address(0)) revert MindNotFound();
 
         VeniceMind mindContract = VeniceMind(mindAddr);
-        vvvReceived = mindContract.swapToVVV(
-            inputToken,
-            inputAmount,
-            aggregator,
-            swapCalldata,
-            minVVVOut
-        );
+        vvvReceived = mindContract.swapToVVV(inputToken, inputAmount, aggregator, swapCalldata, minVVVOut);
 
-        emit MindSwapToVVV(
-            mindId,
-            inputToken,
-            inputAmount,
-            vvvReceived,
-            aggregator
-        );
+        emit MindSwapToVVV(mindId, inputToken, inputAmount, vvvReceived, aggregator);
     }
 
     /**
@@ -366,9 +317,7 @@ contract VeniceMindFactory is
      * @notice Updates the implementation contract used for newly created minds
      * @param _newImplementation The address of the new mind implementation contract
      */
-    function setMindImplementation(
-        address _newImplementation
-    ) external onlyOwner {
+    function setMindImplementation(address _newImplementation) external onlyOwner {
         if (_newImplementation == address(0)) revert ZeroAddress();
         if (_newImplementation.code.length == 0) revert InvalidImplementation();
         mindImplementation = _newImplementation;
@@ -380,9 +329,7 @@ contract VeniceMindFactory is
      * @param mindId The identifier of the mind to query
      * @return mindInfo The stored struct with metadata and totals
      */
-    function getMindInfo(
-        uint256 mindId
-    ) external view returns (MindInfo memory mindInfo) {
+    function getMindInfo(uint256 mindId) external view returns (MindInfo memory mindInfo) {
         return minds[mindId];
     }
 
@@ -407,9 +354,7 @@ contract VeniceMindFactory is
      * @param mindId The identifier of the mind
      * @return The aggregate burned amount recorded for that mind
      */
-    function getMindTotalBurned(
-        uint256 mindId
-    ) external view returns (uint256) {
+    function getMindTotalBurned(uint256 mindId) external view returns (uint256) {
         // Direct storage read is already optimal
         return minds[mindId].totalBurned;
     }
@@ -419,9 +364,7 @@ contract VeniceMindFactory is
      * @param contributor The address whose contributions should be aggregated
      * @return total The total recorded contribution amount
      */
-    function getTotalContributedBy(
-        address contributor
-    ) external view returns (uint256 total) {
+    function getTotalContributedBy(address contributor) external view returns (uint256 total) {
         uint256 length = mindIds.length;
         for (uint256 i = 0; i < length; i++) {
             uint256 mindId = mindIds[i];
@@ -469,9 +412,7 @@ contract VeniceMindFactory is
     /**
      * @inheritdoc UUPSUpgradeable
      */
-    function _authorizeUpgrade(
-        address newImplementation
-    ) internal override onlyOwner {
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {
         if (newImplementation == address(0)) revert ZeroAddress();
         if (newImplementation.code.length == 0) revert InvalidImplementation();
     }

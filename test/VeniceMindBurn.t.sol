@@ -4,9 +4,7 @@ pragma solidity ^0.8.24;
 import {Test} from "forge-std/Test.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 
 contract VeniceMindBurnTest is Test {
     VeniceMind public mindBurn;
@@ -16,16 +14,8 @@ contract VeniceMindBurnTest is Test {
     address public user2;
     address public user3;
 
-    event Burn(
-        address indexed caller,
-        uint256 amount,
-        uint256 totalBurned
-    );
-    event EmergencyWithdrawal(
-        address indexed token,
-        uint256 amount,
-        address indexed to
-    );
+    event Burn(address indexed caller, uint256 amount, uint256 totalBurned);
+    event EmergencyWithdrawal(address indexed token, uint256 amount, address indexed to);
 
     function setUp() public {
         owner = makeAddr("owner");
@@ -38,12 +28,8 @@ contract VeniceMindBurnTest is Test {
 
         // Deploy upgradeable mind contract
         VeniceMind mindImpl = new VeniceMind();
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMind.initialize.selector,
-            address(vvvToken),
-            owner,
-            address(this)
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(VeniceMind.initialize.selector, address(vvvToken), owner, address(this));
         ERC1967Proxy proxy = new ERC1967Proxy(address(mindImpl), initData);
         mindBurn = VeniceMind(address(proxy));
 
@@ -103,17 +89,10 @@ contract VeniceMindBurnTest is Test {
         bool success = vvvToken.transfer(address(mindBurn), anonymousAmount);
         assertTrue(success);
 
-        assertEq(
-            vvvToken.balanceOf(address(mindBurn)),
-            depositAmount + anonymousAmount
-        );
+        assertEq(vvvToken.balanceOf(address(mindBurn)), depositAmount + anonymousAmount);
 
         vm.expectEmit(true, false, false, true);
-        emit Burn(
-            address(this),
-            depositAmount + anonymousAmount,
-            depositAmount + anonymousAmount
-        );
+        emit Burn(address(this), depositAmount + anonymousAmount, depositAmount + anonymousAmount);
 
         mindBurn.burn();
 

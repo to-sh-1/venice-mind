@@ -7,12 +7,8 @@ import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "../src/MockVVV.sol";
 import {IERC20} from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import {ERC20} from "@openzeppelin/contracts/token/ERC20/ERC20.sol";
-import {
-    ERC1967Proxy
-} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import {
-    OwnableUpgradeable
-} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
 /// @dev Simple ERC20 used as a swap input token in tests
 contract MockInputToken is ERC20 {
@@ -89,12 +85,8 @@ contract SwapAndDepositTest is Test {
         // Deploy factory via proxy
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData = abi.encodeWithSelector(
-            VeniceMindFactory.initialize.selector,
-            address(vvvToken),
-            owner,
-            address(mindImpl)
-        );
+        bytes memory initData =
+            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, address(vvvToken), owner, address(mindImpl));
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         factory = VeniceMindFactory(address(proxy));
 
@@ -134,13 +126,7 @@ contract SwapAndDepositTest is Test {
 
         vm.prank(owner);
         vm.expectEmit(true, true, true, true, address(factory));
-        emit MindSwapToVVV(
-            mindId,
-            address(inputToken),
-            swapAmount,
-            swapAmount,
-            address(aggregator)
-        );
+        emit MindSwapToVVV(mindId, address(inputToken), swapAmount, swapAmount, address(aggregator));
 
         factory.swapMindToken(
             mindId,
@@ -154,11 +140,7 @@ contract SwapAndDepositTest is Test {
 
     function testSwapAndDepositWithPartialRate() public {
         // Deploy a 50% rate aggregator and fund it
-        MockAggregator halfAggregator = new MockAggregator(
-            address(inputToken),
-            address(vvvToken),
-            0.5e18
-        );
+        MockAggregator halfAggregator = new MockAggregator(address(inputToken), address(vvvToken), 0.5e18);
         vvvToken.mint(address(halfAggregator), 1_000_000e18);
 
         uint256 swapAmount = 200e18;
@@ -170,10 +152,7 @@ contract SwapAndDepositTest is Test {
             address(inputToken),
             swapAmount,
             address(halfAggregator),
-            abi.encodeWithSelector(
-                MockAggregator.swap.selector,
-                swapAmount
-            ),
+            abi.encodeWithSelector(MockAggregator.swap.selector, swapAmount),
             expectedVVV
         );
 
@@ -182,29 +161,20 @@ contract SwapAndDepositTest is Test {
 
     function testSwapAndDepositSlippageReverts() public {
         // Deploy a 50% rate aggregator and fund it
-        MockAggregator halfAggregator = new MockAggregator(
-            address(inputToken),
-            address(vvvToken),
-            0.5e18
-        );
+        MockAggregator halfAggregator = new MockAggregator(address(inputToken), address(vvvToken), 0.5e18);
         vvvToken.mint(address(halfAggregator), 1_000_000e18);
 
         uint256 swapAmount = 100e18;
         uint256 minOut = 100e18; // Expect 100 but only get 50
 
         vm.prank(owner);
-        vm.expectRevert(
-            abi.encodeWithSelector(VeniceMind.SlippageExceeded.selector, 50e18, 100e18)
-        );
+        vm.expectRevert(abi.encodeWithSelector(VeniceMind.SlippageExceeded.selector, 50e18, 100e18));
         factory.swapMindToken(
             mindId,
             address(inputToken),
             swapAmount,
             address(halfAggregator),
-            abi.encodeWithSelector(
-                MockAggregator.swap.selector,
-                swapAmount
-            ),
+            abi.encodeWithSelector(MockAggregator.swap.selector, swapAmount),
             minOut
         );
     }
@@ -221,10 +191,7 @@ contract SwapAndDepositTest is Test {
             address(inputToken),
             swapAmount,
             address(badAggregator),
-            abi.encodeWithSelector(
-                RevertingAggregator.swap.selector,
-                swapAmount
-            ),
+            abi.encodeWithSelector(RevertingAggregator.swap.selector, swapAmount),
             1
         );
     }
@@ -233,12 +200,7 @@ contract SwapAndDepositTest is Test {
         uint256 swapAmount = 100e18;
 
         vm.startPrank(user1);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OwnableUpgradeable.OwnableUnauthorizedAccount.selector,
-                user1
-            )
-        );
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, user1));
         factory.swapMindToken(
             mindId,
             address(inputToken),
@@ -283,14 +245,7 @@ contract SwapAndDepositTest is Test {
 
         vm.prank(owner);
         vm.expectRevert(VeniceMind.ZeroAddress.selector);
-        factory.swapMindToken(
-            mindId,
-            address(inputToken),
-            swapAmount,
-            address(0),
-            "",
-            1
-        );
+        factory.swapMindToken(mindId, address(inputToken), swapAmount, address(0), "", 1);
     }
 
     function testSwapAndDepositCannotSwapFromVVV() public {
