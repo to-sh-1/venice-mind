@@ -164,7 +164,7 @@ contract VeniceMindIntegrationTest is Test {
         assertEq(factory.getMindTotalBurned(mindId), deposit1 + deposit2);
     }
 
-    function testBurnFromAllMinds() public {
+    function testBurnFromMinds() public {
         // Create multiple minds
         vm.prank(user1);
         (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
@@ -186,9 +186,9 @@ contract VeniceMindIntegrationTest is Test {
 
         assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2 + deposit3);
 
-        // Burn from all minds in one transaction
+        // Burn from all minds via paginated call
         vm.prank(owner);
-        factory.burnFromAllMinds();
+        factory.burnFromMinds(0, 3);
 
         assertEq(factory.getTotalVVVBalance(), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2 + deposit3);
@@ -200,7 +200,7 @@ contract VeniceMindIntegrationTest is Test {
     function testOwnershipTransfer() public {
         // Create a mind
         vm.prank(user1);
-        (, address mindAddress) = factory.createMind("Test Mind");
+        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
 
         VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.owner(), owner);
@@ -212,13 +212,13 @@ contract VeniceMindIntegrationTest is Test {
 
         assertEq(mindContract.owner(), multisig);
 
-        // Multisig can now control the mind
+        // Deposit tokens to the mind
         uint256 depositAmount = 100e18;
         _depositToMind(user1, mindAddress, depositAmount);
 
-        // Multisig burns the tokens
-        vm.prank(multisig);
-        mindContract.burn();
+        // Burns must go through the factory (burn is factory-only)
+        vm.prank(owner);
+        factory.burnFromMind(mindId);
 
         assertEq(mindContract.getVVVBalance(), 0);
         assertEq(mindContract.totalBurned(), depositAmount);

@@ -9,8 +9,8 @@ import {
     OwnableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {
-    ReentrancyGuardUpgradeable
-} from "./utils/ReentrancyGuardUpgradeable.sol";
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {
     UUPSUpgradeable
 } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -26,7 +26,7 @@ import {
 contract VeniceMindFactory is
     Initializable,
     OwnableUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ReentrancyGuard,
     UUPSUpgradeable
 {
     /// @notice The implementation contract for mind burn contracts
@@ -54,11 +54,10 @@ contract VeniceMindFactory is
     /// @notice Struct containing mind information
     struct MindInfo {
         address creator;
-        uint256 mindId;
         address mindAddress;
         uint256 createdAt;
         uint256 totalBurned;
-        string metadata; // Optional metadata for the mind
+        string metadata;
     }
 
     /// @notice Event emitted when a new mind is created
@@ -92,19 +91,53 @@ contract VeniceMindFactory is
     /// @param enabled Whether the allowlist is enabled
     event AllowlistToggled(bool enabled);
 
-    /// @notice Event emitted when a mind burn fails during burnFromAllMinds
+    /// @notice Event emitted when a mind burn fails during burnFromMinds
     /// @param mindId The ID of the mind whose burn failed
     /// @param reason The revert reason
     event MindBurnFailed(uint256 indexed mindId, bytes reason);
 
+    /// @notice Event emitted when a mind performs a swap from an input token into VVV
+    /// @param mindId The ID of the mind that executed the swap
+    /// @param inputToken The token that was swapped from
+    /// @param inputAmount The amount of input token swapped
+    /// @param vvvReceived The amount of VVV received by the mind
+    /// @param aggregator The DEX aggregator/router used for execution
+    event MindSwapToVVV(
+        uint256 indexed mindId,
+        address indexed inputToken,
+        uint256 inputAmount,
+        uint256 vvvReceived,
+        address indexed aggregator
+    );
+
+    /// @notice Event emitted when the mind implementation is updated
+    /// @param newImplementation The new implementation contract address
+    event MindImplementationUpdated(address indexed newImplementation);
+
+    /// @notice Error thrown when a zero address is passed where a valid address is required
+    error ZeroAddress();
+
     /// @notice Error thrown when allowlist is enabled and caller is not allowed
     error NotAllowedToCreateMind();
 
-    /**
-     * @dev Constructor sets the VVV token address and deploys the implementation
-     * @param _vvvToken The VVV token contract address
-     * @param _owner The initial owner of the factory
-     */
+    /// @notice Error thrown when referencing a mind that does not exist
+    error MindNotFound();
+
+    /// @notice Error thrown when a mind is not managed by this factory
+    error MindNotManagedByFactory();
+
+    /// @notice Error thrown when the start index exceeds the mind array bounds
+    error StartIndexOutOfBounds();
+
+    /// @notice Error thrown when burnFromMinds is called with a zero batch size
+    error ZeroBatchSize();
+
+    /// @notice Error thrown when an implementation address is not a valid contract
+    error InvalidImplementation();
+
+    /// @notice Error thrown when renounceOwnership is called
+    error RenounceOwnershipDisabled();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -121,15 +154,13 @@ contract VeniceMindFactory is
         address _owner,
         address _mindImplementation
     ) external initializer {
-        require(_vvvToken != address(0), "VVV token address cannot be zero");
-        require(_owner != address(0), "Owner address cannot be zero");
-        require(
-            _mindImplementation != address(0),
-            "Mind implementation cannot be zero"
-        );
+        if (_vvvToken == address(0)) revert ZeroAddress();
+        if (_owner == address(0)) revert ZeroAddress();
+        if (_mindImplementation == address(0)) revert ZeroAddress();
+        if (_mindImplementation.code.length == 0)
+            revert InvalidImplementation();
 
         __Ownable_init(_owner);
-        reentrancyGuardInit();
         vvvToken = _vvvToken;
         mindImplementation = _mindImplementation;
     }
@@ -142,7 +173,7 @@ contract VeniceMindFactory is
      */
     function createMind(
         string calldata metadata
-    ) external returns (uint256 mindId, address mindAddress) {
+    ) external nonReentrant returns (uint256 mindId, address mindAddress) {
         if (allowlistEnabled && !allowlist[msg.sender]) {
             revert NotAllowedToCreateMind();
         }
@@ -162,7 +193,6 @@ contract VeniceMindFactory is
         // Store mind information
         minds[mindId] = MindInfo({
             creator: msg.sender,
-            mindId: mindId,
             mindAddress: mindAddress,
             createdAt: block.timestamp,
             totalBurned: 0,
@@ -183,11 +213,12 @@ contract VeniceMindFactory is
     function burnFromMind(uint256 mindId) external onlyOwner nonReentrant {
         MindInfo storage mind = minds[mindId];
         address mindAddr = mind.mindAddress;
-        require(mindAddr != address(0), "Mind does not exist");
+        if (mindAddr == address(0)) revert MindNotFound();
 
         VeniceMind mindContract = VeniceMind(mindAddr);
+        if (mindContract.factory() != address(this))
+            revert MindNotManagedByFactory();
 
-        // Get the actual burned amount from the mind contract before and after
         uint256 totalBurnedBefore = mindContract.totalBurned();
         uint256 balanceBefore = mindContract.getVVVBalance();
 
@@ -209,21 +240,33 @@ contract VeniceMindFactory is
     }
 
     /**
-     * @notice Iterates all minds and burns their balances where possible
-     * @dev Gas usage scales with the number of minds and balances
+     * @notice Burns balances from a paginated slice of minds
+     * @dev Use startIndex=0 and batchSize=getMindCount() to burn all, or page through in batches
+     * @param startIndex The index into mindIds to begin from (inclusive)
+     * @param batchSize The maximum number of minds to process in this call
      */
-    function burnFromAllMinds() external onlyOwner nonReentrant {
+    function burnFromMinds(
+        uint256 startIndex,
+        uint256 batchSize
+    ) external onlyOwner nonReentrant {
+        if (batchSize == 0) revert ZeroBatchSize();
         uint256 length = mindIds.length;
+        if (startIndex >= length) revert StartIndexOutOfBounds();
+
+        uint256 endIndex = startIndex + batchSize;
+        if (endIndex > length) {
+            endIndex = length;
+        }
+
         uint256 currentGlobalTotal = globalTotalBurned;
 
-        for (uint256 i = 0; i < length; i++) {
+        for (uint256 i = startIndex; i < endIndex; i++) {
             uint256 mindId = mindIds[i];
             MindInfo storage mind = minds[mindId];
             address mindAddr = mind.mindAddress;
 
             VeniceMind mindContract = VeniceMind(mindAddr);
 
-            // Skip minds that are no longer managed by this factory
             try mindContract.factory() returns (address f) {
                 if (f != address(this)) {
                     continue;
@@ -231,7 +274,6 @@ contract VeniceMindFactory is
             } catch {
                 continue;
             }
-
             uint256 balanceBefore = mindContract.getVVVBalance();
 
             if (balanceBefore > 0) {
@@ -252,8 +294,47 @@ contract VeniceMindFactory is
             }
         }
 
-        // Update global total once at the end (saves storage writes)
         globalTotalBurned = currentGlobalTotal;
+    }
+
+    /**
+     * @notice Swaps an input token held by a specific mind into VVV via the mind contract
+     * @dev The factory owner orchestrates swaps while execution occurs in the target mind
+     * @param mindId The identifier of the mind that should execute the swap
+     * @param inputToken The token to swap from
+     * @param inputAmount The amount of input token to swap
+     * @param aggregator The aggregator/router contract to execute
+     * @param swapCalldata Pre-built calldata for the aggregator call
+     * @param minVVVOut The minimum acceptable VVV output (slippage protection)
+     * @return vvvReceived The amount of VVV received by the mind
+     */
+    function swapMindToken(
+        uint256 mindId,
+        address inputToken,
+        uint256 inputAmount,
+        address aggregator,
+        bytes calldata swapCalldata,
+        uint256 minVVVOut
+    ) external onlyOwner nonReentrant returns (uint256 vvvReceived) {
+        address mindAddr = minds[mindId].mindAddress;
+        if (mindAddr == address(0)) revert MindNotFound();
+
+        VeniceMind mindContract = VeniceMind(mindAddr);
+        vvvReceived = mindContract.swapToVVV(
+            inputToken,
+            inputAmount,
+            aggregator,
+            swapCalldata,
+            minVVVOut
+        );
+
+        emit MindSwapToVVV(
+            mindId,
+            inputToken,
+            inputAmount,
+            vvvReceived,
+            aggregator
+        );
     }
 
     /**
@@ -279,6 +360,19 @@ contract VeniceMindFactory is
         }
         allowlistEnabled = enabled;
         emit AllowlistToggled(enabled);
+    }
+
+    /**
+     * @notice Updates the implementation contract used for newly created minds
+     * @param _newImplementation The address of the new mind implementation contract
+     */
+    function setMindImplementation(
+        address _newImplementation
+    ) external onlyOwner {
+        if (_newImplementation == address(0)) revert ZeroAddress();
+        if (_newImplementation.code.length == 0) revert InvalidImplementation();
+        mindImplementation = _newImplementation;
+        emit MindImplementationUpdated(_newImplementation);
     }
 
     /**
@@ -345,7 +439,7 @@ contract VeniceMindFactory is
      */
     function getMindVVVBalance(uint256 mindId) external view returns (uint256) {
         address mindAddr = minds[mindId].mindAddress;
-        require(mindAddr != address(0), "Mind does not exist");
+        if (mindAddr == address(0)) revert MindNotFound();
         VeniceMind mindContract = VeniceMind(mindAddr);
         return mindContract.getVVVBalance();
     }
@@ -369,13 +463,18 @@ contract VeniceMindFactory is
      * @notice Disabled to prevent accidental loss of ownership and upgradeability
      */
     function renounceOwnership() public pure override {
-        revert("Renounce ownership disabled");
+        revert RenounceOwnershipDisabled();
     }
 
     /**
      * @inheritdoc UUPSUpgradeable
      */
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
+        if (newImplementation.code.length == 0) revert InvalidImplementation();
+    }
 
     uint256[50] private _gap;
 }

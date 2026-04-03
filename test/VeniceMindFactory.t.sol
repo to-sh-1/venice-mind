@@ -106,7 +106,6 @@ contract VeniceMindFactoryTest is Test {
             mindId
         );
         assertEq(mindInfo.creator, user1);
-        assertEq(mindInfo.mindId, 1);
         assertEq(mindInfo.mindAddress, mindAddress);
         assertEq(mindInfo.createdAt, block.timestamp);
         assertEq(mindInfo.totalBurned, 0);
@@ -165,7 +164,7 @@ contract VeniceMindFactoryTest is Test {
         assertEq(mindInfo.totalBurned, depositAmount);
     }
 
-    function testBurnFromAllMinds() public {
+    function testBurnFromMinds() public {
         // Create multiple minds
         vm.prank(user1);
         (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
@@ -182,13 +181,42 @@ contract VeniceMindFactoryTest is Test {
 
         assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2);
 
-        // Factory owner burns from all minds
+        // Factory owner burns from all minds via pagination
         vm.prank(owner);
-        factory.burnFromAllMinds();
+        factory.burnFromMinds(0, 2);
 
         assertEq(factory.getTotalVVVBalance(), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
         assertEq(factory.getMindTotalBurned(mindId1), deposit1);
+        assertEq(factory.getMindTotalBurned(mindId2), deposit2);
+    }
+
+    function testBurnFromMindsPaginated() public {
+        vm.prank(user1);
+        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
+
+        vm.prank(user2);
+        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+
+        uint256 deposit1 = 100e18;
+        uint256 deposit2 = 50e18;
+
+        _depositToMind(user1, mindAddress1, deposit1);
+        _depositToMind(user2, mindAddress2, deposit2);
+
+        // Burn first batch (mind 1 only)
+        vm.prank(owner);
+        factory.burnFromMinds(0, 1);
+
+        assertEq(factory.globalTotalBurned(), deposit1);
+        assertEq(factory.getMindTotalBurned(mindId1), deposit1);
+        assertEq(factory.getMindTotalBurned(mindId2), 0);
+
+        // Burn second batch (mind 2 only)
+        vm.prank(owner);
+        factory.burnFromMinds(1, 1);
+
+        assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
     }
 
@@ -236,10 +264,13 @@ contract VeniceMindFactoryTest is Test {
         factory.burnFromMind(mindId);
     }
 
-    function testOnlyOwnerCanBurnFromAllMinds() public {
+    function testOnlyOwnerCanBurnFromMinds() public {
+        vm.prank(user1);
+        factory.createMind("Mind 1");
+
         vm.expectRevert();
         vm.prank(user1);
-        factory.burnFromAllMinds();
+        factory.burnFromMinds(0, 1);
     }
 
     function testOnlyOwnerCanUpdateAllowlist() public {
@@ -325,7 +356,7 @@ contract VeniceMindFactoryTest is Test {
     }
 
     function testBurnFromNonExistentMind() public {
-        vm.expectRevert("Mind does not exist");
+        vm.expectRevert(VeniceMindFactory.MindNotFound.selector);
         vm.prank(owner);
         factory.burnFromMind(999);
     }
@@ -333,6 +364,59 @@ contract VeniceMindFactoryTest is Test {
     function testGetMindInfoNonExistent() public view {
         VeniceMindFactory.MindInfo memory mindInfo = factory.getMindInfo(999);
         assertEq(mindInfo.mindAddress, address(0));
+    }
+
+    function testRenounceOwnershipDisabled() public {
+        vm.expectRevert(VeniceMindFactory.RenounceOwnershipDisabled.selector);
+        vm.prank(owner);
+        factory.renounceOwnership();
+    }
+
+    function testCannotDoubleInitializeFactory() public {
+        VeniceMind mindImpl = new VeniceMind();
+        vm.expectRevert();
+        factory.initialize(address(vvvToken), owner, address(mindImpl));
+    }
+
+    function testSetMindImplementationZeroAddress() public {
+        vm.expectRevert(VeniceMindFactory.ZeroAddress.selector);
+        vm.prank(owner);
+        factory.setMindImplementation(address(0));
+    }
+
+    function testSetMindImplementationNotContract() public {
+        vm.expectRevert(VeniceMindFactory.InvalidImplementation.selector);
+        vm.prank(owner);
+        factory.setMindImplementation(makeAddr("eoa"));
+    }
+
+    function testBurnFromMindsZeroBatchSize() public {
+        vm.prank(user1);
+        factory.createMind("Mind 1");
+
+        vm.expectRevert(VeniceMindFactory.ZeroBatchSize.selector);
+        vm.prank(owner);
+        factory.burnFromMinds(0, 0);
+    }
+
+    function testBurnFromMindsStartIndexOutOfBounds() public {
+        vm.prank(user1);
+        factory.createMind("Mind 1");
+
+        vm.expectRevert(VeniceMindFactory.StartIndexOutOfBounds.selector);
+        vm.prank(owner);
+        factory.burnFromMinds(5, 1);
+    }
+
+    function testSwapMindTokenNonExistentMind() public {
+        vm.expectRevert(VeniceMindFactory.MindNotFound.selector);
+        vm.prank(owner);
+        factory.swapMindToken(999, address(vvvToken), 100, address(1), "", 0);
+    }
+
+    function testGetMindVVVBalanceNonExistentMind() public {
+        vm.expectRevert(VeniceMindFactory.MindNotFound.selector);
+        factory.getMindVVVBalance(999);
     }
 
     function testFuzzCreateMind(string calldata metadata) public {

@@ -12,8 +12,8 @@ import {
     OwnableUpgradeable
 } from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import {
-    ReentrancyGuardUpgradeable
-} from "./utils/ReentrancyGuardUpgradeable.sol";
+    ReentrancyGuard
+} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import {
     UUPSUpgradeable
 } from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
@@ -25,7 +25,7 @@ import {
 contract VeniceMind is
     Initializable,
     OwnableUpgradeable,
-    ReentrancyGuardUpgradeable,
+    ReentrancyGuard,
     UUPSUpgradeable
 {
     using SafeERC20 for IERC20;
@@ -51,9 +51,8 @@ contract VeniceMind is
     /// @notice Mapping to track if an address is already in contributors array
     mapping(address => bool) private isContributor;
 
-    // Legacy storage preserved for upgrade compatibility (no longer used)
-    mapping(address => uint256) private _legacyPendingBy;
-    uint256 private _legacyTotalPending;
+    /// @notice Total amount of VVV deposited into this mind (via deposit())
+    uint256 public totalDeposited;
 
     /// @notice Event emitted when VVV tokens are deposited
     event Deposit(
@@ -63,17 +62,7 @@ contract VeniceMind is
     );
 
     /// @notice Event emitted when VVV tokens are burned
-    event Burn(
-        address indexed contributor,
-        uint256 amount,
-        uint256 totalBurned
-    );
-
-    /// @notice Event emitted when ownership is transferred
-    event OwnerTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
-    );
+    event Burn(address indexed caller, uint256 amount, uint256 totalBurned);
 
     /// @notice Event emitted when tokens are withdrawn via emergencyWithdraw
     event EmergencyWithdrawal(
@@ -81,6 +70,17 @@ contract VeniceMind is
         uint256 amount,
         address indexed to
     );
+
+    /// @notice Event emitted when this mind swaps an ERC20 token into VVV
+    event SwappedToVVV(
+        address indexed inputToken,
+        uint256 inputAmount,
+        uint256 vvvReceived,
+        address indexed aggregator
+    );
+
+    /// @notice Error thrown when a zero address is passed where a valid address is required
+    error ZeroAddress();
 
     /// @notice Error thrown when trying to burn zero tokens
     error NoTokensToBurn();
@@ -90,6 +90,27 @@ contract VeniceMind is
 
     /// @notice Error thrown when attempting to deposit zero tokens
     error ZeroAmount();
+
+    /// @notice Error thrown when a DEX aggregator swap call fails
+    error SwapFailed();
+
+    /// @notice Error thrown when the swap output is below the minimum acceptable amount
+    error SlippageExceeded(uint256 received, uint256 minimum);
+
+    /// @notice Error thrown when emergency withdraw targets the VVV token
+    error CannotWithdrawVVV();
+
+    /// @notice Error thrown when attempting to swap from the VVV token itself
+    error CannotSwapFromVVV();
+
+    /// @notice Error thrown when renounceOwnership is called
+    error RenounceOwnershipDisabled();
+
+    /// @notice Error thrown when emergency withdraw finds no token balance
+    error NoTokensToWithdraw();
+
+    /// @notice Error thrown when an upgrade target is not a valid contract
+    error InvalidImplementation();
 
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
@@ -107,12 +128,11 @@ contract VeniceMind is
         address _owner,
         address _factory
     ) external initializer {
-        require(_vvvToken != address(0), "VVV token address cannot be zero");
-        require(_owner != address(0), "Owner address cannot be zero");
-        require(_factory != address(0), "Factory address cannot be zero");
+        if (_vvvToken == address(0)) revert ZeroAddress();
+        if (_owner == address(0)) revert ZeroAddress();
+        if (_factory == address(0)) revert ZeroAddress();
 
         __Ownable_init(_owner);
-        reentrancyGuardInit();
         vvvToken = IERC20(_vvvToken);
         factory = _factory;
     }
@@ -129,7 +149,7 @@ contract VeniceMind is
      * @notice Burns the entire VVV balance held by this mind
      * @dev Sends the full balance to the canonical burn address and updates running totals
      */
-    function burn() external onlyOwnerOrFactory nonReentrant {
+    function burn() external onlyFactory nonReentrant {
         IERC20 token = vvvToken;
         uint256 balance = token.balanceOf(address(this));
         if (balance == 0) {
@@ -139,7 +159,7 @@ contract VeniceMind is
         token.safeTransfer(BURN_ADDRESS, balance);
         totalBurned += balance;
 
-        emit Burn(address(0), balance, totalBurned);
+        emit Burn(msg.sender, balance, totalBurned);
     }
 
     /**
@@ -152,17 +172,62 @@ contract VeniceMind is
         address token,
         address to
     ) external onlyOwner nonReentrant {
-        require(token != address(0), "Token address cannot be zero");
-        require(to != address(0), "Recipient address cannot be zero");
-
-        require(token != address(vvvToken), "Cannot withdraw VVV tokens");
+        if (token == address(0)) revert ZeroAddress();
+        if (to == address(0)) revert ZeroAddress();
+        if (token == address(vvvToken)) revert CannotWithdrawVVV();
 
         IERC20 tokenContract = IERC20(token);
         uint256 amount = tokenContract.balanceOf(address(this));
-        if (amount > 0) {
-            tokenContract.safeTransfer(to, amount);
-            emit EmergencyWithdrawal(token, amount, to);
+        if (amount == 0) revert NoTokensToWithdraw();
+
+        tokenContract.safeTransfer(to, amount);
+        emit EmergencyWithdrawal(token, amount, to);
+    }
+
+    /**
+     * @notice Swaps a token balance held by this mind into VVV via a DEX aggregator
+     * @dev Callable only by the factory to centralize admin orchestration in VeniceMindFactory
+     * @dev Uses 0x aggregator to swap the input token into VVV
+     * @param inputToken The token to swap from
+     * @param inputAmount The amount of input tokens to swap
+     * @param aggregator The aggregator/router contract to call
+     * @param swapCalldata Pre-built calldata for aggregator execution
+     * @param minVVVOut The minimum acceptable VVV output
+     * @return vvvReceived The VVV amount received by this mind
+     */
+    function swapToVVV(
+        address inputToken,
+        uint256 inputAmount,
+        address aggregator,
+        bytes calldata swapCalldata,
+        uint256 minVVVOut
+    ) external onlyOwnerOrFactory nonReentrant returns (uint256 vvvReceived) {
+        if (inputToken == address(0)) revert ZeroAddress();
+        if (inputToken == address(vvvToken)) revert CannotSwapFromVVV();
+        if (aggregator == address(0)) revert ZeroAddress();
+        if (inputAmount == 0) {
+            revert ZeroAmount();
         }
+
+        IERC20 inputTokenContract = IERC20(inputToken);
+        IERC20 token = vvvToken;
+        uint256 vvvBalanceBefore = token.balanceOf(address(this));
+
+        inputTokenContract.forceApprove(aggregator, inputAmount);
+
+        (bool success, ) = aggregator.call(swapCalldata);
+        if (!success) {
+            revert SwapFailed();
+        }
+
+        vvvReceived = token.balanceOf(address(this)) - vvvBalanceBefore;
+        if (vvvReceived < minVVVOut) {
+            revert SlippageExceeded(vvvReceived, minVVVOut);
+        }
+
+        inputTokenContract.forceApprove(aggregator, 0);
+
+        emit SwappedToVVV(inputToken, inputAmount, vvvReceived, aggregator);
     }
 
     /**
@@ -190,14 +255,12 @@ contract VeniceMind is
     }
 
     /**
-     * @notice Transfers mind ownership and emits the custom OwnerTransferred event
+     * @notice Transfers mind ownership
      * @param newOwner The address that should receive ownership
      */
     function transferOwnership(address newOwner) public override onlyOwner {
-        require(newOwner != address(0), "New owner cannot be zero address");
-        address previousOwner = owner();
+        if (newOwner == address(0)) revert ZeroAddress();
         _transferOwnership(newOwner);
-        emit OwnerTransferred(previousOwner, newOwner);
     }
 
     /**
@@ -220,6 +283,7 @@ contract VeniceMind is
 
         uint256 newTotal = contributedBy[contributor] + amount;
         contributedBy[contributor] = newTotal;
+        totalDeposited += amount;
 
         emit Deposit(contributor, amount, newTotal);
     }
@@ -228,13 +292,28 @@ contract VeniceMind is
      * @notice Disabled to prevent accidental loss of ownership and upgradeability
      */
     function renounceOwnership() public pure override {
-        revert("Renounce ownership disabled");
+        revert RenounceOwnershipDisabled();
     }
 
     /**
      * @inheritdoc UUPSUpgradeable
      */
-    function _authorizeUpgrade(address) internal override onlyOwner {}
+    function _authorizeUpgrade(
+        address newImplementation
+    ) internal override onlyOwner {
+        if (newImplementation == address(0)) revert ZeroAddress();
+        if (newImplementation.code.length == 0) revert InvalidImplementation();
+    }
+
+    /**
+     * @dev Restricts calls to the deploying factory contract
+     */
+    modifier onlyFactory() {
+        if (msg.sender != factory) {
+            revert UnauthorizedCaller();
+        }
+        _;
+    }
 
     /**
      * @dev Restricts calls to the owner or the deploying factory contract

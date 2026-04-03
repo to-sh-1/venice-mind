@@ -17,13 +17,9 @@ contract VeniceMindBurnTest is Test {
     address public user3;
 
     event Burn(
-        address indexed contributor,
+        address indexed caller,
         uint256 amount,
         uint256 totalBurned
-    );
-    event OwnerTransferred(
-        address indexed previousOwner,
-        address indexed newOwner
     );
     event EmergencyWithdrawal(
         address indexed token,
@@ -83,11 +79,10 @@ contract VeniceMindBurnTest is Test {
         assertEq(mindBurn.totalBurned(), 0);
         assertEq(mindBurn.contributedBy(user1), depositAmount);
 
-        // Owner burns the tokens
         vm.expectEmit(true, false, false, true);
-        emit Burn(address(0), depositAmount, depositAmount);
+        emit Burn(address(this), depositAmount, depositAmount);
 
-        vm.prank(owner);
+        // Test contract is the factory, so it can call burn()
         mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
@@ -115,12 +110,11 @@ contract VeniceMindBurnTest is Test {
 
         vm.expectEmit(true, false, false, true);
         emit Burn(
-            address(0),
+            address(this),
             depositAmount + anonymousAmount,
             depositAmount + anonymousAmount
         );
 
-        vm.prank(owner);
         mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
@@ -130,17 +124,20 @@ contract VeniceMindBurnTest is Test {
 
     function testBurnWithZeroBalance() public {
         vm.expectRevert(VeniceMind.NoTokensToBurn.selector);
-        vm.prank(owner);
         mindBurn.burn();
     }
 
-    function testOnlyOwnerCanBurn() public {
+    function testOnlyFactoryCanBurn() public {
         uint256 depositAmount = 100e18;
 
         _deposit(user1, depositAmount);
 
-        vm.expectRevert();
+        vm.expectRevert(VeniceMind.UnauthorizedCaller.selector);
         vm.prank(user1);
+        mindBurn.burn();
+
+        vm.expectRevert(VeniceMind.UnauthorizedCaller.selector);
+        vm.prank(owner);
         mindBurn.burn();
     }
 
@@ -171,25 +168,22 @@ contract VeniceMindBurnTest is Test {
 
         _deposit(user1, depositAmount);
 
-        vm.expectRevert("Cannot withdraw VVV tokens");
+        vm.expectRevert(VeniceMind.CannotWithdrawVVV.selector);
         vm.prank(owner);
         mindBurn.emergencyWithdraw(address(vvvToken), user1);
     }
 
     function testEmergencyWithdrawZeroAddresses() public {
-        vm.expectRevert("Token address cannot be zero");
+        vm.expectRevert(VeniceMind.ZeroAddress.selector);
         vm.prank(owner);
         mindBurn.emergencyWithdraw(address(0), user1);
 
-        vm.expectRevert("Recipient address cannot be zero");
+        vm.expectRevert(VeniceMind.ZeroAddress.selector);
         vm.prank(owner);
         mindBurn.emergencyWithdraw(address(vvvToken), address(0));
     }
 
     function testTransferOwnership() public {
-        vm.expectEmit(true, true, false, false);
-        emit OwnerTransferred(owner, user1);
-
         vm.prank(owner);
         mindBurn.transferOwnership(user1);
 
@@ -207,13 +201,9 @@ contract VeniceMindBurnTest is Test {
         uint256 deposit2 = 50e18;
 
         _deposit(user1, deposit1);
-
-        vm.prank(owner);
         mindBurn.burn();
 
         _deposit(user2, deposit2);
-
-        vm.prank(owner);
         mindBurn.burn();
 
         address[] memory contributors = mindBurn.getContributors();
@@ -225,15 +215,36 @@ contract VeniceMindBurnTest is Test {
     }
 
     function testReentrancyProtection() public {
-        // This test would require a malicious contract to test reentrancy
-        // For now, we'll just verify the nonReentrant modifier is present
         uint256 depositAmount = 100e18;
 
         _deposit(user1, depositAmount);
 
-        // Should not revert due to reentrancy
-        vm.prank(owner);
         mindBurn.burn();
+    }
+
+    function testEmergencyWithdrawZeroBalance() public {
+        MockVVV otherToken = new MockVVV(owner);
+
+        vm.expectRevert(VeniceMind.NoTokensToWithdraw.selector);
+        vm.prank(owner);
+        mindBurn.emergencyWithdraw(address(otherToken), user1);
+    }
+
+    function testTransferOwnershipToZeroAddress() public {
+        vm.expectRevert(VeniceMind.ZeroAddress.selector);
+        vm.prank(owner);
+        mindBurn.transferOwnership(address(0));
+    }
+
+    function testRenounceOwnershipDisabled() public {
+        vm.expectRevert(VeniceMind.RenounceOwnershipDisabled.selector);
+        vm.prank(owner);
+        mindBurn.renounceOwnership();
+    }
+
+    function testCannotDoubleInitialize() public {
+        vm.expectRevert();
+        mindBurn.initialize(address(vvvToken), owner, address(this));
     }
 
     function testFuzzBurn(uint256 amount) public {
@@ -244,11 +255,8 @@ contract VeniceMindBurnTest is Test {
         vvvToken.mint(user1, amount);
         vm.stopPrank();
 
-        // User1 deposits tokens
         _deposit(user1, amount);
 
-        // Owner burns tokens
-        vm.prank(owner);
         mindBurn.burn();
 
         assertEq(mindBurn.getVVVBalance(), 0);
