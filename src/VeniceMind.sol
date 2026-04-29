@@ -56,6 +56,9 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
         address indexed inputToken, uint256 inputAmount, uint256 vvvReceived, address indexed aggregator
     );
 
+    /// @notice Emitted when the post-swap zero-approval cleanup reverts (e.g. tokens that reject zero-value approvals)
+    event ApproveCleanupFailed(address indexed token, address indexed aggregator);
+
     /// @notice Error thrown when a zero address is passed where a valid address is required
     error ZeroAddress();
 
@@ -197,17 +200,36 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
         totalSwapped += vvvReceived;
 
-        inputTokenContract.forceApprove(aggregator, 0);
+        (bool zeroApproveSuccess,) = inputToken.call(abi.encodeCall(IERC20.approve, (aggregator, 0)));
+        if (!zeroApproveSuccess) {
+            emit ApproveCleanupFailed(inputToken, aggregator);
+        }
 
         emit SwappedToVVV(inputToken, inputAmount, vvvReceived, aggregator);
     }
 
     /**
-     * @notice Returns the list of all contributors who have ever deposited
-     * @return The array of contributor addresses
+     * @notice Returns a paginated slice of contributor addresses
+     * @param startIndex The index to begin from (inclusive)
+     * @param batchSize The maximum number of addresses to return
+     * @return addrs The slice of contributor addresses
      */
-    function getContributors() external view returns (address[] memory) {
-        return contributors;
+    function getContributorsPaginated(uint256 startIndex, uint256 batchSize)
+        external
+        view
+        returns (address[] memory addrs)
+    {
+        uint256 length = contributors.length;
+        if (startIndex >= length) return new address[](0);
+
+        uint256 endIndex = startIndex + batchSize;
+        if (endIndex > length) endIndex = length;
+
+        uint256 resultLength = endIndex - startIndex;
+        addrs = new address[](resultLength);
+        for (uint256 i = 0; i < resultLength; i++) {
+            addrs[i] = contributors[startIndex + i];
+        }
     }
 
     /**

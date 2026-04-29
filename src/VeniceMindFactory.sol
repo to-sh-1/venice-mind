@@ -371,22 +371,6 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     }
 
     /**
-     * @notice Sums the contributions of an address across all minds
-     * @param contributor The address whose contributions should be aggregated
-     * @return total The total recorded contribution amount
-     */
-    function getTotalContributedBy(address contributor) external view returns (uint256 total) {
-        uint256 length = mindIds.length;
-        for (uint256 i = 0; i < length; i++) {
-            uint256 mindId = mindIds[i];
-            // Cache mind address to save storage read
-            address mindAddr = minds[mindId].mindAddress;
-            VeniceMind mindContract = VeniceMind(mindAddr);
-            total += mindContract.contributedBy(contributor);
-        }
-    }
-
-    /**
      * @notice Retrieves the live VVV balance for a specific mind contract
      * @param mindId The identifier of the mind to query
      * @return The current VVV token balance at the mind address
@@ -396,20 +380,6 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         if (mindAddr == address(0)) revert MindNotFound();
         VeniceMind mindContract = VeniceMind(mindAddr);
         return mindContract.getVVVBalance();
-    }
-
-    /**
-     * @notice Aggregates the VVV balances across all minds
-     * @return total The sum of VVV held by every mind
-     */
-    function getTotalVVVBalance() external view returns (uint256 total) {
-        uint256 length = mindIds.length;
-        for (uint256 i = 0; i < length; i++) {
-            uint256 mindId = mindIds[i];
-            address mindAddr = minds[mindId].mindAddress;
-            VeniceMind mindContract = VeniceMind(mindAddr);
-            total += mindContract.getVVVBalance();
-        }
     }
 
     /**
