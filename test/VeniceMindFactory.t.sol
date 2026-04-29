@@ -151,13 +151,13 @@ contract VeniceMindFactoryTest is Test {
         _depositToMind(user1, mindAddress1, deposit1);
         _depositToMind(user2, mindAddress2, deposit2);
 
-        assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), deposit1 + deposit2);
 
         // Factory owner burns from all minds via pagination
         vm.prank(owner);
         factory.burnFromMinds(0, 2);
 
-        assertEq(factory.getTotalVVVBalance(), 0);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
         assertEq(factory.getMindTotalBurned(mindId1), deposit1);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
@@ -277,8 +277,8 @@ contract VeniceMindFactoryTest is Test {
         vm.prank(owner);
         factory.burnFromMind(mindId2);
 
-        assertEq(factory.getTotalContributedBy(user1), deposit1);
-        assertEq(factory.getTotalContributedBy(user2), deposit2);
+        assertEq(factory.getTotalContributedByPaginated(user1, 0, factory.getMindCount()), deposit1);
+        assertEq(factory.getTotalContributedByPaginated(user2, 0, factory.getMindCount()), deposit2);
     }
 
     function testMindOwnerCanEmergencyWithdraw() public {

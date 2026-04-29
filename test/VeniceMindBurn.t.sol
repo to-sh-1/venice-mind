@@ -185,7 +185,7 @@ contract VeniceMindBurnTest is Test {
         _deposit(user2, deposit2);
         mindBurn.burn();
 
-        address[] memory contributors = mindBurn.getContributors();
+        address[] memory contributors = mindBurn.getContributorsPaginated(0, mindBurn.getContributorCount());
         assertEq(contributors.length, 2);
         assertEq(contributors[0], user1);
         assertEq(contributors[1], user2);

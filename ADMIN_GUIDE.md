@@ -99,10 +99,18 @@ uint256 mindTotalBurned = factory.getMindTotalBurned(mindId);
 uint256 mindVVVBalance = factory.getMindVVVBalance(mindId);
 ```
 
-### Per-Contributor Statistics
+### Per-Contributor Statistics (Paginated)
 
 ```solidity
-uint256 contributorTotal = factory.getTotalContributedBy(contributorAddress);
+uint256 count = factory.getMindCount();
+uint256 contributorTotal = factory.getTotalContributedByPaginated(contributorAddress, 0, count);
+```
+
+### Aggregate VVV Balance (Paginated)
+
+```solidity
+uint256 count = factory.getMindCount();
+uint256 totalBalance = factory.getTotalVVVBalancePaginated(0, count);
 ```
 
 ### All Minds
