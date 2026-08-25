@@ -24,7 +24,9 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
     /// @notice Factory contract that deployed this mind (authorized for certain operations)
     address public factory;
 
-    /// @notice Burn address constant
+    /// @notice Burn target used by {burn}
+    /// @dev VVV must accept transfers to `address(0)` without reverting. Production VVV
+    ///      (`0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf`) does; default OpenZeppelin ERC20 does not.
     address private constant BURN_ADDRESS = address(0);
 
     /// @notice Mapping of contributor address to total amount contributed
@@ -123,7 +125,10 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
     /**
      * @notice Burns the entire VVV balance held by this mind
-     * @dev Sends the full balance to the canonical burn address and updates running totals
+     * @dev Transfers the full balance to `BURN_ADDRESS` (`address(0)`) and updates running totals.
+     *      This requires the VVV token to allow a zero-address recipient. A VVV upgrade that
+     *      restores the default OpenZeppelin ERC20 zero-receiver check would make every `burn()`
+     *      call revert until this mind is upgraded.
      */
     function burn() external onlyFactory nonReentrant {
         IERC20 token = vvvToken;
@@ -159,7 +164,7 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
     /**
      * @notice Swaps a token balance held by this mind into VVV via a DEX aggregator
-     * @dev Callable only by the factory to centralize admin orchestration in VeniceMindFactory
+     * @dev Callable by the mind owner or the factory (`onlyOwnerOrFactory`)
      * @dev Uses 0x aggregator to swap the input token into VVV
      * @param inputToken The token to swap from
      * @param inputAmount The amount of input tokens to swap

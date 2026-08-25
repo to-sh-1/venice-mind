@@ -31,10 +31,8 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     bool public allowlistEnabled;
 
     /// @notice Mapping of mind ID to mind information
+    /// @dev Mind IDs are the contiguous sequence `1 ..= mindCounter`
     mapping(uint256 => MindInfo) public minds;
-
-    /// @notice Array of all mind IDs
-    uint256[] private mindIds;
 
     /// @notice Struct containing mind information
     struct MindInfo {
@@ -107,7 +105,7 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     /// @notice Error thrown when a mind is not managed by this factory
     error MindNotManagedByFactory();
 
-    /// @notice Error thrown when the start index exceeds the mind array bounds
+    /// @notice Error thrown when the start index exceeds the mind count
     error StartIndexOutOfBounds();
 
     /// @notice Error thrown when burnFromMinds is called with a zero batch size
@@ -170,8 +168,6 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
             metadata: metadata
         });
 
-        mindIds.push(mindId);
-
         emit MindCreated(msg.sender, mindId, mindAddress, metadata);
 
         return (mindId, mindAddress);
@@ -212,14 +208,16 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     }
 
     /**
-     * @notice Burns balances from a paginated slice of minds
-     * @dev Use startIndex=0 and batchSize=getMindCount() to burn all, or page through in batches
-     * @param startIndex The index into mindIds to begin from (inclusive)
+     * @notice Burns balances from a contiguous slice of minds
+     * @dev `startIndex` is 0-based; mind IDs are 1-based, so `startIndex=0` processes mind 1.
+     *      If `startIndex + batchSize` exceeds the current mind count, the end is clamped.
+     *      Callers that want every mind can pass `startIndex=0` and `batchSize=getMindCount()`.
+     * @param startIndex The 0-based index of the first mind to process (mind ID = startIndex + 1)
      * @param batchSize The maximum number of minds to process in this call
      */
     function burnFromMinds(uint256 startIndex, uint256 batchSize) external onlyOwner nonReentrant {
         if (batchSize == 0) revert ZeroBatchSize();
-        uint256 length = mindIds.length;
+        uint256 length = mindCounter;
         if (startIndex >= length) revert StartIndexOutOfBounds();
 
         uint256 endIndex = startIndex + batchSize;
@@ -230,7 +228,7 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         uint256 currentGlobalTotal = globalTotalBurned;
 
         for (uint256 i = startIndex; i < endIndex; i++) {
-            uint256 mindId = mindIds[i];
+            uint256 mindId = i + 1;
             MindInfo storage mind = minds[mindId];
             address mindAddr = mind.mindAddress;
 
@@ -247,20 +245,23 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
             }
             uint256 balanceBefore = mindContract.getVVVBalance();
 
-            if (balanceBefore > 0) {
-                uint256 totalBurnedBefore = mindContract.totalBurned();
+            if (balanceBefore == 0) {
+                emit MindBurnSkipped(mindId, "zero balance");
+                continue;
+            }
 
-                try mindContract.burn() {
-                    uint256 totalBurnedAfter = mindContract.totalBurned();
-                    uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
+            uint256 totalBurnedBefore = mindContract.totalBurned();
 
-                    currentGlobalTotal += actuallyBurned;
-                    mind.totalBurned = totalBurnedAfter;
+            try mindContract.burn() {
+                uint256 totalBurnedAfter = mindContract.totalBurned();
+                uint256 actuallyBurned = totalBurnedAfter - totalBurnedBefore;
 
-                    emit GlobalBurn(mindId, actuallyBurned, currentGlobalTotal);
-                } catch (bytes memory reason) {
-                    emit MindBurnFailed(mindId, reason);
-                }
+                currentGlobalTotal += actuallyBurned;
+                mind.totalBurned = totalBurnedAfter;
+
+                emit GlobalBurn(mindId, actuallyBurned, currentGlobalTotal);
+            } catch (bytes memory reason) {
+                emit MindBurnFailed(mindId, reason);
             }
         }
 
@@ -345,19 +346,23 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     }
 
     /**
-     * @notice Returns the list of all mind identifiers
-     * @return The array of mind IDs
+     * @notice Returns the list of all mind identifiers (`1 ..= mindCounter`)
+     * @return ids The synthesized array of mind IDs
      */
-    function getMindIds() external view returns (uint256[] memory) {
-        return mindIds;
+    function getMindIds() external view returns (uint256[] memory ids) {
+        uint256 length = mindCounter;
+        ids = new uint256[](length);
+        for (uint256 i = 0; i < length; i++) {
+            ids[i] = i + 1;
+        }
     }
 
     /**
      * @notice Get the total number of minds created
-     * @return The number of minds created
+     * @return The number of minds created (equal to `mindCounter`)
      */
     function getMindCount() external view returns (uint256) {
-        return mindIds.length;
+        return mindCounter;
     }
 
     /**
@@ -384,12 +389,12 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
 
     /**
      * @notice Returns a paginated slice of mind identifiers
-     * @param startIndex The index to begin from (inclusive)
+     * @param startIndex The 0-based index to begin from (inclusive)
      * @param batchSize The maximum number of IDs to return
      * @return ids The slice of mind IDs
      */
     function getMindIdsPaginated(uint256 startIndex, uint256 batchSize) external view returns (uint256[] memory ids) {
-        uint256 length = mindIds.length;
+        uint256 length = mindCounter;
         if (startIndex >= length) return new uint256[](0);
 
         uint256 endIndex = startIndex + batchSize;
@@ -398,14 +403,14 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         uint256 resultLength = endIndex - startIndex;
         ids = new uint256[](resultLength);
         for (uint256 i = 0; i < resultLength; i++) {
-            ids[i] = mindIds[startIndex + i];
+            ids[i] = startIndex + i + 1;
         }
     }
 
     /**
      * @notice Sums the contributions of an address across a paginated slice of minds
      * @param contributor The address whose contributions should be aggregated
-     * @param startIndex The index into mindIds to begin from (inclusive)
+     * @param startIndex The 0-based index of the first mind to query (mind ID = startIndex + 1)
      * @param batchSize The maximum number of minds to query
      * @return total The total recorded contribution amount for the queried slice
      */
@@ -414,33 +419,33 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         view
         returns (uint256 total)
     {
-        uint256 length = mindIds.length;
+        uint256 length = mindCounter;
         if (startIndex >= length) return 0;
 
         uint256 endIndex = startIndex + batchSize;
         if (endIndex > length) endIndex = length;
 
         for (uint256 i = startIndex; i < endIndex; i++) {
-            address mindAddr = minds[mindIds[i]].mindAddress;
+            address mindAddr = minds[i + 1].mindAddress;
             total += VeniceMind(mindAddr).contributedBy(contributor);
         }
     }
 
     /**
      * @notice Aggregates VVV balances across a paginated slice of minds
-     * @param startIndex The index into mindIds to begin from (inclusive)
+     * @param startIndex The 0-based index of the first mind to query (mind ID = startIndex + 1)
      * @param batchSize The maximum number of minds to query
      * @return total The sum of VVV held by the queried slice of minds
      */
     function getTotalVVVBalancePaginated(uint256 startIndex, uint256 batchSize) external view returns (uint256 total) {
-        uint256 length = mindIds.length;
+        uint256 length = mindCounter;
         if (startIndex >= length) return 0;
 
         uint256 endIndex = startIndex + batchSize;
         if (endIndex > length) endIndex = length;
 
         for (uint256 i = startIndex; i < endIndex; i++) {
-            address mindAddr = minds[mindIds[i]].mindAddress;
+            address mindAddr = minds[i + 1].mindAddress;
             total += VeniceMind(mindAddr).getVVVBalance();
         }
     }
