@@ -24,7 +24,9 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
     /// @notice Factory contract that deployed this mind (authorized for certain operations)
     address public factory;
 
-    /// @notice Burn address constant
+    /// @notice Burn target used by {burn}
+    /// @dev VVV must accept transfers to `address(0)` without reverting. Production VVV
+    ///      (`0xacfE6019Ed1A7Dc6f7B508C02d1b04ec88cC21bf`) does; default OpenZeppelin ERC20 does not.
     address private constant BURN_ADDRESS = address(0);
 
     /// @notice Mapping of contributor address to total amount contributed
@@ -55,6 +57,9 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
     event SwappedToVVV(
         address indexed inputToken, uint256 inputAmount, uint256 vvvReceived, address indexed aggregator
     );
+
+    /// @notice Emitted when the post-swap zero-approval cleanup reverts (e.g. tokens that reject zero-value approvals)
+    event ApproveCleanupFailed(address indexed token, address indexed aggregator);
 
     /// @notice Error thrown when a zero address is passed where a valid address is required
     error ZeroAddress();
@@ -120,7 +125,10 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
     /**
      * @notice Burns the entire VVV balance held by this mind
-     * @dev Sends the full balance to the canonical burn address and updates running totals
+     * @dev Transfers the full balance to `BURN_ADDRESS` (`address(0)`) and updates running totals.
+     *      This requires the VVV token to allow a zero-address recipient. A VVV upgrade that
+     *      restores the default OpenZeppelin ERC20 zero-receiver check would make every `burn()`
+     *      call revert until this mind is upgraded.
      */
     function burn() external onlyFactory nonReentrant {
         IERC20 token = vvvToken;
@@ -156,7 +164,7 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
     /**
      * @notice Swaps a token balance held by this mind into VVV via a DEX aggregator
-     * @dev Callable only by the factory to centralize admin orchestration in VeniceMindFactory
+     * @dev Callable by the mind owner or the factory (`onlyOwnerOrFactory`)
      * @dev Uses 0x aggregator to swap the input token into VVV
      * @param inputToken The token to swap from
      * @param inputAmount The amount of input tokens to swap
@@ -197,17 +205,36 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
         totalSwapped += vvvReceived;
 
-        inputTokenContract.forceApprove(aggregator, 0);
+        (bool zeroApproveSuccess,) = inputToken.call(abi.encodeCall(IERC20.approve, (aggregator, 0)));
+        if (!zeroApproveSuccess) {
+            emit ApproveCleanupFailed(inputToken, aggregator);
+        }
 
         emit SwappedToVVV(inputToken, inputAmount, vvvReceived, aggregator);
     }
 
     /**
-     * @notice Returns the list of all contributors who have ever deposited
-     * @return The array of contributor addresses
+     * @notice Returns a paginated slice of contributor addresses
+     * @param startIndex The index to begin from (inclusive)
+     * @param batchSize The maximum number of addresses to return
+     * @return addrs The slice of contributor addresses
      */
-    function getContributors() external view returns (address[] memory) {
-        return contributors;
+    function getContributorsPaginated(uint256 startIndex, uint256 batchSize)
+        external
+        view
+        returns (address[] memory addrs)
+    {
+        uint256 length = contributors.length;
+        if (startIndex >= length) return new address[](0);
+
+        uint256 endIndex = startIndex + batchSize;
+        if (endIndex > length) endIndex = length;
+
+        uint256 resultLength = endIndex - startIndex;
+        addrs = new address[](resultLength);
+        for (uint256 i = 0; i < resultLength; i++) {
+            addrs[i] = contributors[startIndex + i];
+        }
     }
 
     /**

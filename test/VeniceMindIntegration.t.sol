@@ -102,7 +102,7 @@ contract VeniceMindIntegrationTest is Test {
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
 
         // Step 6: Verify accounting
-        assertEq(factory.getTotalVVVBalance(), 0);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
         assertEq(factory.globalTotalBurned(), deposit1a + deposit1b + deposit1c + deposit2);
     }
 
@@ -152,13 +152,13 @@ contract VeniceMindIntegrationTest is Test {
         _depositToMind(user2, mindAddress2, deposit2);
         _depositToMind(user3, mindAddress3, deposit3);
 
-        assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2 + deposit3);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), deposit1 + deposit2 + deposit3);
 
         // Burn from all minds via paginated call
         vm.prank(owner);
         factory.burnFromMinds(0, 3);
 
-        assertEq(factory.getTotalVVVBalance(), 0);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2 + deposit3);
         assertEq(factory.getMindTotalBurned(mindId1), deposit1);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
@@ -285,6 +285,6 @@ contract VeniceMindIntegrationTest is Test {
         assertEq(factory.globalTotalBurned(), expectedTotal);
         assertEq(factory.getMindTotalBurned(mindId1), deposits1[0] + deposits1[1] + deposits1[2]);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
-        assertEq(factory.getTotalVVVBalance(), 0);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
     }
 }

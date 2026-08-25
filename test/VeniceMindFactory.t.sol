@@ -20,6 +20,7 @@ contract VeniceMindFactoryTest is Test {
     event GlobalBurn(uint256 indexed mindId, uint256 amount, uint256 globalTotal);
     event AllowlistUpdated(address indexed account, bool allowed);
     event AllowlistToggled(bool enabled);
+    event MindBurnSkipped(uint256 indexed mindId, string reason);
 
     function _depositToMind(address contributor, address mindAddress, uint256 amount) internal {
         vm.startPrank(contributor);
@@ -151,13 +152,13 @@ contract VeniceMindFactoryTest is Test {
         _depositToMind(user1, mindAddress1, deposit1);
         _depositToMind(user2, mindAddress2, deposit2);
 
-        assertEq(factory.getTotalVVVBalance(), deposit1 + deposit2);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), deposit1 + deposit2);
 
         // Factory owner burns from all minds via pagination
         vm.prank(owner);
         factory.burnFromMinds(0, 2);
 
-        assertEq(factory.getTotalVVVBalance(), 0);
+        assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
         assertEq(factory.getMindTotalBurned(mindId1), deposit1);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
@@ -189,6 +190,27 @@ contract VeniceMindFactoryTest is Test {
         factory.burnFromMinds(1, 1);
 
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
+        assertEq(factory.getMindTotalBurned(mindId2), deposit2);
+    }
+
+    function testBurnFromMindsEmitsSkippedOnZeroBalance() public {
+        vm.prank(user1);
+        (uint256 mindId1,) = factory.createMind("Mind 1");
+
+        vm.prank(user2);
+        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+
+        uint256 deposit2 = 100e18;
+        _depositToMind(user2, mindAddress2, deposit2);
+
+        vm.expectEmit(true, false, false, true, address(factory));
+        emit MindBurnSkipped(mindId1, "zero balance");
+
+        vm.prank(owner);
+        factory.burnFromMinds(0, 2);
+
+        assertEq(factory.globalTotalBurned(), deposit2);
+        assertEq(factory.getMindTotalBurned(mindId1), 0);
         assertEq(factory.getMindTotalBurned(mindId2), deposit2);
     }
 
@@ -277,8 +299,8 @@ contract VeniceMindFactoryTest is Test {
         vm.prank(owner);
         factory.burnFromMind(mindId2);
 
-        assertEq(factory.getTotalContributedBy(user1), deposit1);
-        assertEq(factory.getTotalContributedBy(user2), deposit2);
+        assertEq(factory.getTotalContributedByPaginated(user1, 0, factory.getMindCount()), deposit1);
+        assertEq(factory.getTotalContributedByPaginated(user2, 0, factory.getMindCount()), deposit2);
     }
 
     function testMindOwnerCanEmergencyWithdraw() public {
@@ -373,6 +395,20 @@ contract VeniceMindFactoryTest is Test {
         vm.expectRevert(VeniceMindFactory.StartIndexOutOfBounds.selector);
         vm.prank(owner);
         factory.burnFromMinds(5, 1);
+    }
+
+    function testBurnFromMindsClampsEndIndex() public {
+        vm.prank(user1);
+        (uint256 mindId, address mindAddress) = factory.createMind("Mind 1");
+
+        uint256 depositAmount = 100e18;
+        _depositToMind(user1, mindAddress, depositAmount);
+
+        vm.prank(owner);
+        factory.burnFromMinds(0, 99);
+
+        assertEq(factory.globalTotalBurned(), depositAmount);
+        assertEq(factory.getMindTotalBurned(mindId), depositAmount);
     }
 
     function testSwapMindTokenNonExistentMind() public {
