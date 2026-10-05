@@ -6,12 +6,60 @@ import {VeniceMindFactory} from "../src/VeniceMindFactory.sol";
 import {VeniceMind} from "../src/VeniceMind.sol";
 import {MockVVV} from "./MockVVV.sol";
 import {ERC1967Proxy} from "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
+import {Initializable} from "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import {OwnableUpgradeable} from "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import {ReentrancyGuardTransient} from "@openzeppelin/contracts/utils/ReentrancyGuardTransient.sol";
+import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+
+contract VeniceMindFactoryV1Harness is Initializable, OwnableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
+    address public mindImplementation;
+    address public vvvToken;
+    uint256 public mindCounter;
+    uint256 public globalTotalBurned;
+    mapping(address => bool) public allowlist;
+    bool public allowlistEnabled;
+
+    struct MindInfo {
+        address creator;
+        address mindAddress;
+        uint256 createdAt;
+        uint256 totalBurned;
+        string metadata;
+    }
+
+    mapping(uint256 => MindInfo) public minds;
+
+    constructor() {
+        _disableInitializers();
+    }
+
+    function initialize(address token, address initialOwner, address implementation) external initializer {
+        __Ownable_init(initialOwner);
+        vvvToken = token;
+        mindImplementation = implementation;
+    }
+
+    function seedState(uint256 counter, uint256 burned, address allowedAccount, uint256 mindId, MindInfo calldata mind)
+        external
+        onlyOwner
+    {
+        mindCounter = counter;
+        globalTotalBurned = burned;
+        allowlist[allowedAccount] = true;
+        allowlistEnabled = true;
+        minds[mindId] = mind;
+    }
+
+    function _authorizeUpgrade(address) internal override onlyOwner {}
+
+    uint256[50] private _gap;
+}
 
 contract VeniceMindFactoryTest is Test {
     VeniceMindFactory public factory;
     MockVVV public vvvToken;
     address public owner;
+    address public burnOperator;
     address public user1;
     address public user2;
     address public user3;
@@ -21,6 +69,7 @@ contract VeniceMindFactoryTest is Test {
     event AllowlistUpdated(address indexed account, bool allowed);
     event AllowlistToggled(bool enabled);
     event MindBurnSkipped(uint256 indexed mindId, string reason);
+    event BurnOperatorUpdated(address indexed previousOperator, address indexed newOperator);
 
     function _depositToMind(address contributor, address mindAddress, uint256 amount) internal {
         vm.startPrank(contributor);
@@ -31,6 +80,7 @@ contract VeniceMindFactoryTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
+        burnOperator = makeAddr("burnOperator");
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
         user3 = makeAddr("user3");
@@ -52,14 +102,16 @@ contract VeniceMindFactoryTest is Test {
     function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl), burnOperator
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
 
     function testInitialState() public view {
         assertEq(factory.owner(), owner);
+        assertEq(factory.burnOperator(), burnOperator);
         assertEq(factory.vvvToken(), address(vvvToken));
         assertEq(factory.globalTotalBurned(), 0);
         assertEq(factory.mindCounter(), 0);
@@ -122,11 +174,11 @@ contract VeniceMindFactoryTest is Test {
 
         assertEq(factory.getMindVVVBalance(mindId), depositAmount);
 
-        // Factory owner burns from the mind
+        // Dedicated burn operator burns from the mind
         vm.expectEmit(true, false, false, true);
         emit GlobalBurn(mindId, depositAmount, depositAmount);
 
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId);
 
         assertEq(factory.getMindVVVBalance(mindId), 0);
@@ -154,8 +206,8 @@ contract VeniceMindFactoryTest is Test {
 
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), deposit1 + deposit2);
 
-        // Factory owner burns from all minds via pagination
-        vm.prank(owner);
+        // Dedicated burn operator burns from all minds via pagination
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 2);
 
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
@@ -178,7 +230,7 @@ contract VeniceMindFactoryTest is Test {
         _depositToMind(user2, mindAddress2, deposit2);
 
         // Burn first batch (mind 1 only)
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 1);
 
         assertEq(factory.globalTotalBurned(), deposit1);
@@ -186,7 +238,7 @@ contract VeniceMindFactoryTest is Test {
         assertEq(factory.getMindTotalBurned(mindId2), 0);
 
         // Burn second batch (mind 2 only)
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(1, 1);
 
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
@@ -206,7 +258,7 @@ contract VeniceMindFactoryTest is Test {
         vm.expectEmit(true, false, false, true, address(factory));
         emit MindBurnSkipped(mindId1, "zero balance");
 
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 2);
 
         assertEq(factory.globalTotalBurned(), deposit2);
@@ -246,25 +298,146 @@ contract VeniceMindFactoryTest is Test {
         assertTrue(mindAddress != address(0));
     }
 
-    function testOnlyOwnerCanBurnFromMind() public {
+    function testOnlyBurnOperatorCanBurnFromMind() public {
         vm.prank(user1);
         (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
 
         uint256 depositAmount = 100e18;
         _depositToMind(user1, mindAddress, depositAmount);
 
-        vm.expectRevert();
-        vm.prank(user1);
+        vm.expectRevert(VeniceMindFactory.UnauthorizedBurnOperator.selector);
+        vm.prank(owner);
+        factory.burnFromMind(mindId);
+
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId);
     }
 
-    function testOnlyOwnerCanBurnFromMinds() public {
+    function testOnlyBurnOperatorCanBurnFromMinds() public {
         vm.prank(user1);
         factory.createMind("Mind 1");
 
-        vm.expectRevert();
-        vm.prank(user1);
+        vm.expectRevert(VeniceMindFactory.UnauthorizedBurnOperator.selector);
+        vm.prank(owner);
         factory.burnFromMinds(0, 1);
+    }
+
+    function testOwnerCanRotateBurnOperator() public {
+        address newBurnOperator = makeAddr("newBurnOperator");
+
+        vm.expectEmit(true, true, false, true);
+        emit BurnOperatorUpdated(burnOperator, newBurnOperator);
+
+        vm.prank(owner);
+        factory.setBurnOperator(newBurnOperator);
+
+        assertEq(factory.burnOperator(), newBurnOperator);
+    }
+
+    function testRotatingBurnOperatorRevokesOldOperatorAndEnablesNewOperator() public {
+        vm.prank(user1);
+        (uint256 mindId, address mindAddress) = factory.createMind("Operator rotation");
+        _depositToMind(user1, mindAddress, 100e18);
+
+        address newBurnOperator = makeAddr("newBurnOperator");
+        vm.prank(owner);
+        factory.setBurnOperator(newBurnOperator);
+
+        vm.expectRevert(VeniceMindFactory.UnauthorizedBurnOperator.selector);
+        vm.prank(burnOperator);
+        factory.burnFromMind(mindId);
+
+        vm.prank(newBurnOperator);
+        factory.burnFromMind(mindId);
+
+        assertEq(factory.getMindVVVBalance(mindId), 0);
+        assertEq(factory.globalTotalBurned(), 100e18);
+    }
+
+    function testBurnOperatorDoesNotBypassCreationAllowlist() public {
+        vm.prank(owner);
+        factory.toggleAllowlist(true);
+
+        vm.expectRevert(VeniceMindFactory.NotAllowedToCreateMind.selector);
+        vm.prank(burnOperator);
+        factory.createMind("Not allowlisted");
+
+        vm.prank(owner);
+        factory.toggleAllowlist(false);
+
+        vm.prank(burnOperator);
+        (uint256 mindId,) = factory.createMind("Public creation");
+
+        assertEq(factory.getMindInfo(mindId).creator, burnOperator);
+    }
+
+    function testBurnOperatorCannotUseOwnerPrivileges() public {
+        VeniceMind replacementImplementation = new VeniceMind();
+        (, address mindAddress) = factory.createMind("Permission separation");
+        VeniceMind mind = VeniceMind(mindAddress);
+
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, burnOperator));
+        vm.prank(burnOperator);
+        factory.setMindImplementation(address(replacementImplementation));
+
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, burnOperator));
+        vm.prank(burnOperator);
+        factory.transferOwnership(user1);
+
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, burnOperator));
+        vm.prank(burnOperator);
+        mind.transferOwnership(user1);
+
+        vm.expectRevert(abi.encodeWithSelector(OwnableUpgradeable.OwnableUnauthorizedAccount.selector, burnOperator));
+        vm.prank(burnOperator);
+        mind.upgradeToAndCall(address(replacementImplementation), "");
+    }
+
+    function testBurnOperatorMustDifferFromOwner() public {
+        vm.expectRevert(VeniceMindFactory.BurnOperatorMustDifferFromOwner.selector);
+        vm.prank(owner);
+        factory.setBurnOperator(owner);
+
+        vm.expectRevert(VeniceMindFactory.BurnOperatorMustDifferFromOwner.selector);
+        vm.prank(owner);
+        factory.transferOwnership(burnOperator);
+    }
+
+    function testSetBurnOperatorRejectsZeroAddress() public {
+        vm.expectRevert(VeniceMindFactory.ZeroAddress.selector);
+        vm.prank(owner);
+        factory.setBurnOperator(address(0));
+    }
+
+    function testMindCanBeExplicitlyTransferredToBurnOperator() public {
+        (, address mindAddress) = factory.createMind("Explicit overlap");
+        VeniceMind mind = VeniceMind(mindAddress);
+
+        vm.prank(owner);
+        mind.transferOwnership(burnOperator);
+
+        VeniceMind replacementImplementation = new VeniceMind();
+        vm.prank(burnOperator);
+        mind.upgradeToAndCall(address(replacementImplementation), "");
+
+        assertEq(mind.owner(), burnOperator);
+    }
+
+    function testFuzzFactoryOwnerAndBurnOperatorRemainDistinct(address newBurnOperator, address newOwner) public {
+        vm.assume(newBurnOperator != address(0));
+        vm.assume(newBurnOperator != owner);
+        vm.assume(newOwner != address(0));
+        vm.assume(newOwner != newBurnOperator);
+
+        vm.prank(owner);
+        factory.setBurnOperator(newBurnOperator);
+
+        vm.prank(owner);
+        factory.transferOwnership(newOwner);
+
+        assertEq(factory.owner(), newOwner);
+        assertEq(factory.burnOperator(), newBurnOperator);
+        assertTrue(factory.owner() != factory.burnOperator());
     }
 
     function testOnlyOwnerCanUpdateAllowlist() public {
@@ -294,9 +467,9 @@ contract VeniceMindFactoryTest is Test {
         _depositToMind(user2, mindAddress2, deposit2);
 
         // Optional burn to ensure contributions persist even after burning
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId1);
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId2);
 
         assertEq(factory.getTotalContributedByPaginated(user1, 0, factory.getMindCount()), deposit1);
@@ -346,7 +519,7 @@ contract VeniceMindFactoryTest is Test {
 
     function testBurnFromNonExistentMind() public {
         vm.expectRevert(VeniceMindFactory.MindNotFound.selector);
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMind(999);
     }
 
@@ -364,7 +537,66 @@ contract VeniceMindFactoryTest is Test {
     function testCannotDoubleInitializeFactory() public {
         VeniceMind mindImpl = new VeniceMind();
         vm.expectRevert();
-        factory.initialize(address(vvvToken), owner, address(mindImpl));
+        factory.initialize(address(vvvToken), owner, address(mindImpl), burnOperator);
+    }
+
+    function testInitializeRejectsZeroBurnOperator() public {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, address(vvvToken), owner, address(mindImpl), address(0)
+        );
+
+        vm.expectRevert(VeniceMindFactory.ZeroAddress.selector);
+        new ERC1967Proxy(address(factoryImpl), initData);
+    }
+
+    function testInitializeRejectsOwnerAsBurnOperator() public {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactory factoryImpl = new VeniceMindFactory();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, address(vvvToken), owner, address(mindImpl), owner
+        );
+
+        vm.expectRevert(VeniceMindFactory.BurnOperatorMustDifferFromOwner.selector);
+        new ERC1967Proxy(address(factoryImpl), initData);
+    }
+
+    function testUpgradeToAndCallSetsBurnOperatorAndPreservesStorage() public {
+        VeniceMind mindImpl = new VeniceMind();
+        VeniceMindFactoryV1Harness v1Implementation = new VeniceMindFactoryV1Harness();
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactoryV1Harness.initialize.selector, address(vvvToken), owner, address(mindImpl)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(v1Implementation), initData);
+        VeniceMindFactoryV1Harness v1Factory = VeniceMindFactoryV1Harness(address(proxy));
+
+        VeniceMindFactoryV1Harness.MindInfo memory legacyMind = VeniceMindFactoryV1Harness.MindInfo({
+            creator: user1, mindAddress: user2, createdAt: 1234, totalBurned: 55e18, metadata: "legacy mind"
+        });
+        vm.prank(owner);
+        v1Factory.seedState(7, 99e18, user3, 1, legacyMind);
+
+        VeniceMindFactory newImplementation = new VeniceMindFactory();
+        bytes memory migrationCall = abi.encodeCall(VeniceMindFactory.setBurnOperator, (burnOperator));
+        vm.prank(owner);
+        v1Factory.upgradeToAndCall(address(newImplementation), migrationCall);
+
+        VeniceMindFactory upgradedFactory = VeniceMindFactory(address(proxy));
+        VeniceMindFactory.MindInfo memory migratedMind = upgradedFactory.getMindInfo(1);
+        assertEq(upgradedFactory.owner(), owner);
+        assertEq(upgradedFactory.burnOperator(), burnOperator);
+        assertEq(upgradedFactory.vvvToken(), address(vvvToken));
+        assertEq(upgradedFactory.mindImplementation(), address(mindImpl));
+        assertEq(upgradedFactory.mindCounter(), 7);
+        assertEq(upgradedFactory.globalTotalBurned(), 99e18);
+        assertTrue(upgradedFactory.allowlistEnabled());
+        assertTrue(upgradedFactory.allowlist(user3));
+        assertEq(migratedMind.creator, legacyMind.creator);
+        assertEq(migratedMind.mindAddress, legacyMind.mindAddress);
+        assertEq(migratedMind.createdAt, legacyMind.createdAt);
+        assertEq(migratedMind.totalBurned, legacyMind.totalBurned);
+        assertEq(migratedMind.metadata, legacyMind.metadata);
     }
 
     function testSetMindImplementationZeroAddress() public {
@@ -384,7 +616,7 @@ contract VeniceMindFactoryTest is Test {
         factory.createMind("Mind 1");
 
         vm.expectRevert(VeniceMindFactory.ZeroBatchSize.selector);
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 0);
     }
 
@@ -393,7 +625,7 @@ contract VeniceMindFactoryTest is Test {
         factory.createMind("Mind 1");
 
         vm.expectRevert(VeniceMindFactory.StartIndexOutOfBounds.selector);
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(5, 1);
     }
 
@@ -404,7 +636,7 @@ contract VeniceMindFactoryTest is Test {
         uint256 depositAmount = 100e18;
         _depositToMind(user1, mindAddress, depositAmount);
 
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 99);
 
         assertEq(factory.globalTotalBurned(), depositAmount);
@@ -449,7 +681,7 @@ contract VeniceMindFactoryTest is Test {
         _depositToMind(user1, mindAddress, amount);
 
         // Burn from mind
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId);
 
         assertEq(factory.globalTotalBurned(), amount);

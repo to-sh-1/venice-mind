@@ -15,13 +15,15 @@ contract DeploymentTest is Test {
     VeniceMindFactory public factory;
     MockVVV public vvvToken;
     address public owner;
+    address public burnOperator;
     address public user1;
 
     function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl), burnOperator
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
@@ -35,6 +37,7 @@ contract DeploymentTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
+        burnOperator = makeAddr("burnOperator");
         user1 = makeAddr("user1");
     }
 
@@ -51,6 +54,7 @@ contract DeploymentTest is Test {
         factory = deployFactory(address(vvvToken), owner);
 
         assertEq(factory.owner(), owner);
+        assertEq(factory.burnOperator(), burnOperator);
         assertEq(factory.vvvToken(), address(vvvToken));
         assertEq(factory.globalTotalBurned(), 0);
         assertEq(factory.getMindCount(), 0);
@@ -104,8 +108,8 @@ contract DeploymentTest is Test {
         VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.getVVVBalance(), 100e18);
 
-        // Factory owner burns tokens
-        vm.prank(owner);
+        // Dedicated burn operator burns tokens
+        vm.prank(burnOperator);
         factory.burnFromMind(mindId);
 
         // Verify burn

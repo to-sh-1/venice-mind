@@ -93,6 +93,11 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     /// @param newImplementation The new implementation contract address
     event MindImplementationUpdated(address indexed newImplementation);
 
+    /// @notice Event emitted when the burn operator is updated
+    /// @param previousOperator The previous burn operator
+    /// @param newOperator The new burn operator
+    event BurnOperatorUpdated(address indexed previousOperator, address indexed newOperator);
+
     /// @notice Error thrown when a zero address is passed where a valid address is required
     error ZeroAddress();
 
@@ -117,6 +122,12 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     /// @notice Error thrown when renounceOwnership is called
     error RenounceOwnershipDisabled();
 
+    /// @notice Error thrown when a caller other than the burn operator attempts to burn
+    error UnauthorizedBurnOperator();
+
+    /// @notice Error thrown when the burn operator and owner would be the same address
+    error BurnOperatorMustDifferFromOwner();
+
     /// @custom:oz-upgrades-unsafe-allow constructor
     constructor() {
         _disableInitializers();
@@ -127,11 +138,17 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
      * @param _vvvToken The ERC20 token address that all minds will accept
      * @param _owner The owner (typically Venice) with administrative powers
      * @param _mindImplementation The deployed implementation logic contract for minds
+     * @param _burnOperator The operational wallet authorized to initiate burns
      */
-    function initialize(address _vvvToken, address _owner, address _mindImplementation) external initializer {
+    function initialize(address _vvvToken, address _owner, address _mindImplementation, address _burnOperator)
+        external
+        initializer
+    {
         if (_vvvToken == address(0)) revert ZeroAddress();
         if (_owner == address(0)) revert ZeroAddress();
         if (_mindImplementation == address(0)) revert ZeroAddress();
+        if (_burnOperator == address(0)) revert ZeroAddress();
+        if (_burnOperator == _owner) revert BurnOperatorMustDifferFromOwner();
         if (_mindImplementation.code.length == 0) {
             revert InvalidImplementation();
         }
@@ -139,6 +156,7 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         __Ownable_init(_owner);
         vvvToken = _vvvToken;
         mindImplementation = _mindImplementation;
+        burnOperator = _burnOperator;
     }
 
     /**
@@ -177,7 +195,7 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
      * @notice Burns the full VVV balance from a specific mind
      * @param mindId The identifier of the mind to burn
      */
-    function burnFromMind(uint256 mindId) external onlyOwner nonReentrant {
+    function burnFromMind(uint256 mindId) external onlyBurnOperator nonReentrant {
         MindInfo storage mind = minds[mindId];
         address mindAddr = mind.mindAddress;
         if (mindAddr == address(0)) revert MindNotFound();
@@ -215,7 +233,7 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
      * @param startIndex The 0-based index of the first mind to process (mind ID = startIndex + 1)
      * @param batchSize The maximum number of minds to process in this call
      */
-    function burnFromMinds(uint256 startIndex, uint256 batchSize) external onlyOwner nonReentrant {
+    function burnFromMinds(uint256 startIndex, uint256 batchSize) external onlyBurnOperator nonReentrant {
         if (batchSize == 0) revert ZeroBatchSize();
         uint256 length = mindCounter;
         if (startIndex >= length) revert StartIndexOutOfBounds();
@@ -334,6 +352,19 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         if (_newImplementation.code.length == 0) revert InvalidImplementation();
         mindImplementation = _newImplementation;
         emit MindImplementationUpdated(_newImplementation);
+    }
+
+    /**
+     * @notice Updates the operational wallet authorized to initiate burns
+     * @param newOperator The new burn operator address
+     */
+    function setBurnOperator(address newOperator) external onlyOwner {
+        if (newOperator == address(0)) revert ZeroAddress();
+        if (newOperator == owner()) revert BurnOperatorMustDifferFromOwner();
+
+        address previousOperator = burnOperator;
+        burnOperator = newOperator;
+        emit BurnOperatorUpdated(previousOperator, newOperator);
     }
 
     /**
@@ -458,6 +489,16 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
     }
 
     /**
+     * @notice Transfers factory ownership while preserving separation from the burn operator
+     * @param newOwner The address that should receive factory ownership
+     */
+    function transferOwnership(address newOwner) public override onlyOwner {
+        if (newOwner == address(0)) revert ZeroAddress();
+        if (newOwner == burnOperator) revert BurnOperatorMustDifferFromOwner();
+        _transferOwnership(newOwner);
+    }
+
+    /**
      * @inheritdoc UUPSUpgradeable
      */
     function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
@@ -465,5 +506,16 @@ contract VeniceMindFactory is Initializable, OwnableUpgradeable, ReentrancyGuard
         if (newImplementation.code.length == 0) revert InvalidImplementation();
     }
 
-    uint256[50] private _gap;
+    /**
+     * @dev Restricts burn initiation to the dedicated operational wallet.
+     */
+    modifier onlyBurnOperator() {
+        if (msg.sender != burnOperator) revert UnauthorizedBurnOperator();
+        _;
+    }
+
+    /// @notice Operational wallet authorized to initiate burns
+    address public burnOperator;
+
+    uint256[49] private _gap;
 }

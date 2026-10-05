@@ -10,7 +10,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 /**
  * @title VeniceMind
- * @dev Mind subcontract that tracks VVV deposits and allows the owner to burn accounted balances
+ * @dev Mind subcontract that tracks VVV deposits and allows its factory to burn its VVV balance
  */
 contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using SafeERC20 for IERC20;
