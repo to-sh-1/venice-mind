@@ -11,6 +11,7 @@ A master factory and per-mind subcontract system that accepts VVV deposits, allo
 - Global counter of total VVV burned across all minds
 - Emits `MindCreated` events
 - Burns from a specific mind via `burnFromMind(mindId)`, or from a contiguous window via `burnFromMinds(startIndex, batchSize)`
+- Uses a dedicated burn operator that is separate from factory and mind ownership
 - Optional allowlist for mind creation control
 
 ### Mind Subcontract (`VeniceMind`)
@@ -101,6 +102,8 @@ forge test --match-test testFuzz
 ```bash
 # Set up environment variables
 export PRIVATE_KEY="your-private-key"
+export FACTORY_OWNER_ADDRESS="your-multisig-or-admin-address"
+export BURN_OPERATOR_ADDRESS="your-automation-wallet-address"
 
 # Deploy to local network
 forge script script/Deploy.s.sol --rpc-url http://localhost:8545 --broadcast
@@ -137,6 +140,8 @@ VeniceMind(mindAddress).deposit(amount);
 
 ### Burning VVV Tokens
 
+These calls must be sent by the factory's dedicated `burnOperator`.
+
 ```solidity
 // Burn from a specific mind
 factory.burnFromMind(mindId);
@@ -153,7 +158,7 @@ VeniceMind mind = VeniceMind(mindAddress);
 mind.transferOwnership(multisigAddress);
 ```
 
-This rotates the **mind** owner only. The factory owner is independent and is not updated. See `ADMIN_GUIDE.md` for the dual-admin model.
+This rotates the **mind** owner only. The factory owner and burn operator are independent and are not updated. See `ADMIN_GUIDE.md` for the authority model.
 
 ### Recovering Non-VVV Tokens
 
@@ -164,9 +169,10 @@ mind.emergencyWithdraw(tokenAddress, recipientAddress);
 
 ## Security
 
-- **Dual admin**: Each mind has its own owner (initially the factory owner at creation). The factory owner can still burn and orchestrate swaps through the factory. Rotating the factory owner does not rotate existing mind owners.
+- **Separated burn authority**: Only the dedicated burn operator can initiate burns. It must differ from the factory owner, and the role itself grants no ownership or upgrade authority. The contracts do not prevent separately transferring a mind to that wallet, so deployments must avoid doing so when separation is required.
+- **Independent ownership**: Each mind has its own owner (initially the factory owner at creation). Rotating the factory owner does not rotate existing mind owners.
 - **Burn target**: `burn()` transfers VVV to `address(0)`. Production VVV allows this; a future VVV upgrade that reverts on zero-address transfers would lock burns until minds are upgraded.
-- **Access control**: Only the factory owner can burn via the factory, manage the allowlist, change the mind implementation, and upgrade the factory. The mind owner can upgrade that mind, swap via `swapToVVV`, recover non-VVV tokens, and transfer mind ownership.
+- **Access control**: The factory owner manages the allowlist, burn-operator rotation, mind implementation, swaps through the factory, and factory upgrades. The mind owner can upgrade that mind, swap via `swapToVVV`, recover non-VVV tokens, and transfer mind ownership.
 - **Reentrancy protection**: State-changing entry points that move tokens are protected against reentrancy.
 - **Safe ERC20**: Uses OpenZeppelin's SafeERC20 for token operations.
 - **Input validation**: Addresses, amounts, and implementation targets are checked before use.

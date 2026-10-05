@@ -59,7 +59,17 @@ factory.burnFromMinds(startIndex, batchSize); // a contiguous slice
 
 Zero-balance minds in the batch emit `MindBurnSkipped` and are skipped; other minds in the window still process.
 
-**Access:** Only factory owner (Venice)
+**Access:** Only the dedicated burn operator. The burn role itself grants no factory or mind ownership or upgrade permissions.
+
+The factory owner can rotate the operational wallet:
+
+```solidity
+factory.setBurnOperator(newBurnOperator);
+```
+
+The new operator must be nonzero and different from the current factory owner.
+
+When upgrading an existing factory, initialize this new storage value in the same transaction by using `upgradeToAndCall` with encoded `setBurnOperator(newBurnOperator)` calldata. Until it is set, burns are disabled because the stored operator is the zero address.
 
 ### 3. Depositing VVV (for integrators)
 
@@ -195,6 +205,15 @@ event AllowlistUpdated(
 );
 ```
 
+### BurnOperatorUpdated
+
+```solidity
+event BurnOperatorUpdated(
+    address indexed previousOperator,
+    address indexed newOperator
+);
+```
+
 ## Typical Workflow
 
 1. **Deploy System**: Deploy the `VeniceMind` implementation, then the factory proxy, pointing at production VVV
@@ -206,16 +225,20 @@ event AllowlistUpdated(
 
 ## Security Considerations
 
-### Dual admin (factory owner vs mind owner)
+### Separated authority (burn operator vs factory and mind owners)
 
-The factory owner can burn from any mind, orchestrate aggregator swaps via `swapMindToken`, manage the allowlist, change the implementation used for **new** minds, and upgrade the factory itself.
+The burn operator can initiate individual and batched burns. It cannot manage ownership, implementations, upgrades, swaps, or the creation allowlist.
+
+The factory owner can rotate the burn operator, orchestrate aggregator swaps via `swapMindToken`, manage the allowlist, change the implementation used for **new** minds, and upgrade the factory itself. Factory ownership cannot be transferred to the current burn operator.
 
 Each mind also has its own owner (initially the factory owner at creation). The mind owner can `emergencyWithdraw` non-VVV tokens, call `swapToVVV`, upgrade that mind, and `transferOwnership`.
+
+The contracts only enforce that the burn operator differs from the current factory owner. They do not prevent selecting a wallet that already owns an existing mind or transferring a mind to the burn-operator wallet later. Doing so intentionally combines burn and mind-upgrade authority in that wallet; operators must avoid that configuration when separation is required.
 
 These identities drift independently:
 
 - Transferring factory ownership does **not** update existing mind owners. A previous factory owner keeps upgrade and recovery rights on every mind created during their tenure unless those minds are transferred or upgraded separately.
-- Transferring a mind's owner does **not** change the factory owner. The factory can still burn that mind and call `swapToVVV` through `swapMindToken`.
+- Transferring a mind's owner does **not** change the factory owner or burn operator. The burn operator can still burn that mind, and the factory can still call `swapToVVV` through `swapMindToken`.
 
 If the factory key is rotated, also transfer (or upgrade) every live mind, or accept that the previous owner retains mind-level authority.
 
@@ -248,6 +271,8 @@ Common errors and their meanings:
 - `ZeroBatchSize`: `burnFromMinds` called with `batchSize == 0`
 - `StartIndexOutOfBounds`: `startIndex` is past the current mind count
 - `RenounceOwnershipDisabled`: `renounceOwnership` is not allowed
+- `UnauthorizedBurnOperator`: Caller is not the configured burn operator
+- `BurnOperatorMustDifferFromOwner`: The proposed factory owner and burn operator are the same address
 
 ## Integration Examples
 

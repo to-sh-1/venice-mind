@@ -16,9 +16,13 @@ contract DeployTestnetScript is Script {
     function run() external {
         uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address deployer = vm.addr(deployerPrivateKey);
+        address factoryOwner = vm.envAddress("FACTORY_OWNER_ADDRESS");
+        address burnOperator = vm.envAddress("BURN_OPERATOR_ADDRESS");
 
         console.log("Deploying contracts with account:", deployer);
         console.log("Account balance:", deployer.balance);
+        console.log("Factory and mind owner:", factoryOwner);
+        console.log("Burn operator:", burnOperator);
 
         vm.startBroadcast(deployerPrivateKey);
 
@@ -36,7 +40,7 @@ contract DeployTestnetScript is Script {
 
         // Deploy factory proxy
         bytes memory initData = abi.encodeWithSelector(
-            VeniceMindFactory.initialize.selector, address(vvvToken), deployer, address(mindImpl)
+            VeniceMindFactory.initialize.selector, address(vvvToken), factoryOwner, address(mindImpl), burnOperator
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         VeniceMindFactory factory = VeniceMindFactory(address(proxy));
@@ -50,6 +54,7 @@ contract DeployTestnetScript is Script {
         console.log("VeniceMind implementation:", address(mindImpl));
         console.log("Factory Proxy:", address(factory));
         console.log("Factory Owner:", factory.owner());
+        console.log("Burn Operator:", factory.burnOperator());
         console.log("VVV Token Owner:", vvvToken.owner());
     }
 }

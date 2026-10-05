@@ -53,6 +53,7 @@ contract SwapAndDepositTest is Test {
     MockAggregator public aggregator;
 
     address public owner;
+    address public burnOperator;
     address public user1;
 
     uint256 public mindId;
@@ -68,6 +69,7 @@ contract SwapAndDepositTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
+        burnOperator = makeAddr("burnOperator");
         user1 = makeAddr("user1");
 
         // Deploy tokens (test contract is VVV minter)
@@ -85,8 +87,9 @@ contract SwapAndDepositTest is Test {
         // Deploy factory via proxy
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, address(vvvToken), owner, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, address(vvvToken), owner, address(mindImpl), burnOperator
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         factory = VeniceMindFactory(address(proxy));
 
