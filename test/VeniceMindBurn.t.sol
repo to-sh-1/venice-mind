@@ -193,6 +193,15 @@ contract VeniceMindBurnTest is Test {
         assertEq(mindBurn.contributedBy(user2), deposit2);
     }
 
+    function testGetContributorsPaginatedClampsMaxBatchSize() public {
+        _deposit(user1, 100e18);
+        _deposit(user2, 50e18);
+
+        address[] memory contributors = mindBurn.getContributorsPaginated(1, type(uint256).max);
+        assertEq(contributors.length, 1);
+        assertEq(contributors[0], user2);
+    }
+
     function testReentrancyProtection() public {
         uint256 depositAmount = 100e18;
 

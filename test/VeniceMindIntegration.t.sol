@@ -11,6 +11,7 @@ contract VeniceMindIntegrationTest is Test {
     VeniceMindFactory public factory;
     MockVVV public vvvToken;
     address public owner;
+    address public burnOperator;
     address public user1;
     address public user2;
     address public user3;
@@ -18,6 +19,7 @@ contract VeniceMindIntegrationTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
+        burnOperator = makeAddr("burnOperator");
         user1 = makeAddr("user1");
         user2 = makeAddr("user2");
         user3 = makeAddr("user3");
@@ -34,14 +36,18 @@ contract VeniceMindIntegrationTest is Test {
         vvvToken.mint(user1, 10000e18);
         vvvToken.mint(user2, 10000e18);
         vvvToken.mint(user3, 10000e18);
+        factory.updateAllowlist(user1, true);
+        factory.updateAllowlist(user2, true);
+        factory.updateAllowlist(user3, true);
         vm.stopPrank();
     }
 
     function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl), burnOperator
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
@@ -55,11 +61,13 @@ contract VeniceMindIntegrationTest is Test {
 
     function testFullFlow() public {
         // Step 1: Create minds
+        uint256 mindNumber1 = 100;
+        uint256 mindNumber2 = 5;
         vm.prank(user1);
-        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1 - User1");
+        address mindAddress1 = _createMind(factory, mindNumber1);
 
         vm.prank(user2);
-        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2 - User2");
+        address mindAddress2 = _createMind(factory, mindNumber2);
 
         assertEq(factory.getMindCount(), 2);
 
@@ -77,29 +85,29 @@ contract VeniceMindIntegrationTest is Test {
         // User3 deposits to mind1
         _depositToMind(user3, mindAddress1, deposit1c);
 
-        assertEq(factory.getMindVVVBalance(mindId1), deposit1a + deposit1b + deposit1c);
+        assertEq(factory.getMindVVVBalance(mindNumber1), deposit1a + deposit1b + deposit1c);
 
         // Step 3: User2 deposits to mind2
         uint256 deposit2 = 300e18;
         _depositToMind(user2, mindAddress2, deposit2);
 
-        assertEq(factory.getMindVVVBalance(mindId2), deposit2);
+        assertEq(factory.getMindVVVBalance(mindNumber2), deposit2);
 
-        // Step 4: Factory owner burns from mind1
-        vm.prank(owner);
-        factory.burnFromMind(mindId1);
+        // Step 4: Dedicated operator burns from mind1
+        vm.prank(burnOperator);
+        factory.burnFromMind(mindNumber1);
 
-        assertEq(factory.getMindVVVBalance(mindId1), 0);
+        assertEq(factory.getMindVVVBalance(mindNumber1), 0);
         assertEq(factory.globalTotalBurned(), deposit1a + deposit1b + deposit1c);
-        assertEq(factory.getMindTotalBurned(mindId1), deposit1a + deposit1b + deposit1c);
+        assertEq(factory.getMindTotalBurned(mindNumber1), deposit1a + deposit1b + deposit1c);
 
-        // Step 5: Factory owner burns from mind2
-        vm.prank(owner);
-        factory.burnFromMind(mindId2);
+        // Step 5: Dedicated operator burns from mind2
+        vm.prank(burnOperator);
+        factory.burnFromMind(mindNumber2);
 
-        assertEq(factory.getMindVVVBalance(mindId2), 0);
+        assertEq(factory.getMindVVVBalance(mindNumber2), 0);
         assertEq(factory.globalTotalBurned(), deposit1a + deposit1b + deposit1c + deposit2);
-        assertEq(factory.getMindTotalBurned(mindId2), deposit2);
+        assertEq(factory.getMindTotalBurned(mindNumber2), deposit2);
 
         // Step 6: Verify accounting
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
@@ -109,39 +117,39 @@ contract VeniceMindIntegrationTest is Test {
     function testMultipleBurnsPerMind() public {
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        address mindAddress = _createMind(factory, 42);
 
         // First deposit and burn
         uint256 deposit1 = 100e18;
         _depositToMind(user1, mindAddress, deposit1);
 
-        vm.prank(owner);
-        factory.burnFromMind(mindId);
+        vm.prank(burnOperator);
+        factory.burnFromMind(42);
 
         assertEq(factory.globalTotalBurned(), deposit1);
-        assertEq(factory.getMindTotalBurned(mindId), deposit1);
+        assertEq(factory.getMindTotalBurned(42), deposit1);
 
         // Second deposit and burn
         uint256 deposit2 = 200e18;
         _depositToMind(user2, mindAddress, deposit2);
 
-        vm.prank(owner);
-        factory.burnFromMind(mindId);
+        vm.prank(burnOperator);
+        factory.burnFromMind(42);
 
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2);
-        assertEq(factory.getMindTotalBurned(mindId), deposit1 + deposit2);
+        assertEq(factory.getMindTotalBurned(42), deposit1 + deposit2);
     }
 
     function testBurnFromMinds() public {
         // Create multiple minds
         vm.prank(user1);
-        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
+        address mindAddress1 = _createMind(factory, 100);
 
         vm.prank(user2);
-        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+        address mindAddress2 = _createMind(factory, 5);
 
         vm.prank(user3);
-        (uint256 mindId3, address mindAddress3) = factory.createMind("Mind 3");
+        address mindAddress3 = _createMind(factory, 999);
 
         // Deposit to all minds
         uint256 deposit1 = 100e18;
@@ -155,20 +163,20 @@ contract VeniceMindIntegrationTest is Test {
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), deposit1 + deposit2 + deposit3);
 
         // Burn from all minds via paginated call
-        vm.prank(owner);
+        vm.prank(burnOperator);
         factory.burnFromMinds(0, 3);
 
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
         assertEq(factory.globalTotalBurned(), deposit1 + deposit2 + deposit3);
-        assertEq(factory.getMindTotalBurned(mindId1), deposit1);
-        assertEq(factory.getMindTotalBurned(mindId2), deposit2);
-        assertEq(factory.getMindTotalBurned(mindId3), deposit3);
+        assertEq(factory.getMindTotalBurned(100), deposit1);
+        assertEq(factory.getMindTotalBurned(5), deposit2);
+        assertEq(factory.getMindTotalBurned(999), deposit3);
     }
 
     function testOwnershipTransfer() public {
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        address mindAddress = _createMind(factory, 42);
 
         VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.owner(), owner);
@@ -185,37 +193,29 @@ contract VeniceMindIntegrationTest is Test {
         _depositToMind(user1, mindAddress, depositAmount);
 
         // Burns must go through the factory (burn is factory-only)
-        vm.prank(owner);
-        factory.burnFromMind(mindId);
+        vm.prank(burnOperator);
+        factory.burnFromMind(42);
 
         assertEq(mindContract.getVVVBalance(), 0);
         assertEq(mindContract.totalBurned(), depositAmount);
     }
 
     function testAllowlistFlow() public {
-        // Enable allowlist
         vm.prank(owner);
-        factory.toggleAllowlist(true);
-
-        // Add users to allowlist
-        vm.prank(owner);
-        factory.updateAllowlist(user1, true);
-
-        vm.prank(owner);
-        factory.updateAllowlist(user2, true);
+        factory.updateAllowlist(user3, false);
 
         // User1 can create mind (in allowlist)
         vm.prank(user1);
-        factory.createMind("Mind 1");
+        _createMind(factory, 100);
 
         // User2 can create mind (in allowlist)
         vm.prank(user2);
-        factory.createMind("Mind 2");
+        _createMind(factory, 5);
 
         // User3 cannot create mind (not in allowlist)
         vm.expectRevert(VeniceMindFactory.NotAllowedToCreateMind.selector);
         vm.prank(user3);
-        factory.createMind("Mind 3");
+        _createMind(factory, 999);
 
         assertEq(factory.getMindCount(), 2);
     }
@@ -223,7 +223,7 @@ contract VeniceMindIntegrationTest is Test {
     function testEmergencyWithdrawal() public {
         // Create a mind
         vm.prank(user1);
-        (, address mindAddress) = factory.createMind("Test Mind");
+        address mindAddress = _createMind(factory, 42);
 
         // Deploy a mock ERC20 token
         MockVVV otherToken = new MockVVV(owner);
@@ -248,10 +248,10 @@ contract VeniceMindIntegrationTest is Test {
     function testComplexAccounting() public {
         // Create minds
         vm.prank(user1);
-        (uint256 mindId1, address mindAddress1) = factory.createMind("Mind 1");
+        address mindAddress1 = _createMind(factory, 100);
 
         vm.prank(user2);
-        (uint256 mindId2, address mindAddress2) = factory.createMind("Mind 2");
+        address mindAddress2 = _createMind(factory, 5);
 
         // Multiple deposits to mind1
         uint256[] memory deposits1 = new uint256[](3);
@@ -273,18 +273,25 @@ contract VeniceMindIntegrationTest is Test {
         _depositToMind(user1, mindAddress2, deposit2);
 
         // Burn from mind1
-        vm.prank(owner);
-        factory.burnFromMind(mindId1);
+        vm.prank(burnOperator);
+        factory.burnFromMind(100);
 
         // Burn from mind2
-        vm.prank(owner);
-        factory.burnFromMind(mindId2);
+        vm.prank(burnOperator);
+        factory.burnFromMind(5);
 
         // Verify accounting
         uint256 expectedTotal = deposits1[0] + deposits1[1] + deposits1[2] + deposit2;
         assertEq(factory.globalTotalBurned(), expectedTotal);
-        assertEq(factory.getMindTotalBurned(mindId1), deposits1[0] + deposits1[1] + deposits1[2]);
-        assertEq(factory.getMindTotalBurned(mindId2), deposit2);
+        assertEq(factory.getMindTotalBurned(100), deposits1[0] + deposits1[1] + deposits1[2]);
+        assertEq(factory.getMindTotalBurned(5), deposit2);
         assertEq(factory.getTotalVVVBalancePaginated(0, factory.getMindCount()), 0);
+    }
+
+    function _createMind(VeniceMindFactory target, uint256 number) internal returns (address) {
+        uint256[] memory numbers = new uint256[](1);
+        numbers[0] = number;
+        address[] memory created = target.createMinds(numbers);
+        return created.length == 0 ? address(0) : created[0];
     }
 }

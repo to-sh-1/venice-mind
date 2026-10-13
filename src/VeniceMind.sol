@@ -10,7 +10,7 @@ import {UUPSUpgradeable} from "@openzeppelin/contracts-upgradeable/proxy/utils/U
 
 /**
  * @title VeniceMind
- * @dev Mind subcontract that tracks VVV deposits and allows the owner to burn accounted balances
+ * @dev Mind subcontract that tracks VVV deposits and allows its factory to burn its VVV balance
  */
 contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransient, UUPSUpgradeable {
     using SafeERC20 for IERC20;
@@ -54,6 +54,8 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
     event EmergencyWithdrawal(address indexed token, uint256 amount, address indexed to);
 
     /// @notice Event emitted when this mind swaps an ERC20 token into VVV
+    /// @dev `inputAmount` is the decrease in this mind's input-token balance across the aggregator
+    ///      call, which can differ from the approved amount passed to {swapToVVV}
     event SwappedToVVV(
         address indexed inputToken, uint256 inputAmount, uint256 vvvReceived, address indexed aggregator
     );
@@ -84,6 +86,9 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
 
     /// @notice Error thrown when attempting to swap from the VVV token itself
     error CannotSwapFromVVV();
+
+    /// @notice Error thrown when the VVV token is supplied as the swap aggregator
+    error CannotUseVVVAsAggregator();
 
     /// @notice Error thrown when renounceOwnership is called
     error RenounceOwnershipDisabled();
@@ -183,19 +188,26 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
         if (inputToken == address(0)) revert ZeroAddress();
         if (inputToken == address(vvvToken)) revert CannotSwapFromVVV();
         if (aggregator == address(0)) revert ZeroAddress();
+        if (aggregator == address(vvvToken)) revert CannotUseVVVAsAggregator();
         if (inputAmount == 0) {
             revert ZeroAmount();
         }
 
-        IERC20 inputTokenContract = IERC20(inputToken);
         IERC20 token = vvvToken;
         uint256 vvvBalanceBefore = token.balanceOf(address(this));
+        uint256 inputBalanceBefore = IERC20(inputToken).balanceOf(address(this));
 
-        inputTokenContract.forceApprove(aggregator, inputAmount);
+        IERC20(inputToken).forceApprove(aggregator, inputAmount);
 
         (bool success,) = aggregator.call(swapCalldata);
         if (!success) {
             revert SwapFailed();
+        }
+
+        uint256 inputSpent;
+        {
+            uint256 inputBalanceAfter = IERC20(inputToken).balanceOf(address(this));
+            inputSpent = inputBalanceBefore > inputBalanceAfter ? inputBalanceBefore - inputBalanceAfter : 0;
         }
 
         vvvReceived = token.balanceOf(address(this)) - vvvBalanceBefore;
@@ -210,7 +222,7 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
             emit ApproveCleanupFailed(inputToken, aggregator);
         }
 
-        emit SwappedToVVV(inputToken, inputAmount, vvvReceived, aggregator);
+        emit SwappedToVVV(inputToken, inputSpent, vvvReceived, aggregator);
     }
 
     /**
@@ -227,8 +239,8 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
         uint256 length = contributors.length;
         if (startIndex >= length) return new address[](0);
 
-        uint256 endIndex = startIndex + batchSize;
-        if (endIndex > length) endIndex = length;
+        uint256 endIndex = length;
+        if (batchSize < length - startIndex) endIndex = startIndex + batchSize;
 
         uint256 resultLength = endIndex - startIndex;
         addrs = new address[](resultLength);
@@ -295,9 +307,12 @@ contract VeniceMind is Initializable, OwnableUpgradeable, ReentrancyGuardTransie
     }
 
     /**
-     * @inheritdoc UUPSUpgradeable
+     * @notice Authorizes upgrades by the factory's current owner
+     * @dev Upgrade authority follows factory ownership rather than this mind's owner, so rotating
+     *      factory ownership also rotates upgrade control over every existing mind.
      */
-    function _authorizeUpgrade(address newImplementation) internal view override onlyOwner {
+    function _authorizeUpgrade(address newImplementation) internal view override {
+        if (msg.sender != OwnableUpgradeable(factory).owner()) revert UnauthorizedCaller();
         if (newImplementation == address(0)) revert ZeroAddress();
         if (newImplementation.code.length == 0) revert InvalidImplementation();
     }

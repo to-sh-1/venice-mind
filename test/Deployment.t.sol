@@ -15,13 +15,15 @@ contract DeploymentTest is Test {
     VeniceMindFactory public factory;
     MockVVV public vvvToken;
     address public owner;
+    address public burnOperator;
     address public user1;
 
     function deployFactory(address token, address owner_) internal returns (VeniceMindFactory) {
         VeniceMind mindImpl = new VeniceMind();
         VeniceMindFactory factoryImpl = new VeniceMindFactory();
-        bytes memory initData =
-            abi.encodeWithSelector(VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl));
+        bytes memory initData = abi.encodeWithSelector(
+            VeniceMindFactory.initialize.selector, token, owner_, address(mindImpl), burnOperator
+        );
         ERC1967Proxy proxy = new ERC1967Proxy(address(factoryImpl), initData);
         return VeniceMindFactory(address(proxy));
     }
@@ -35,6 +37,7 @@ contract DeploymentTest is Test {
 
     function setUp() public {
         owner = makeAddr("owner");
+        burnOperator = makeAddr("burnOperator");
         user1 = makeAddr("user1");
     }
 
@@ -51,6 +54,7 @@ contract DeploymentTest is Test {
         factory = deployFactory(address(vvvToken), owner);
 
         assertEq(factory.owner(), owner);
+        assertEq(factory.burnOperator(), burnOperator);
         assertEq(factory.vvvToken(), address(vvvToken));
         assertEq(factory.globalTotalBurned(), 0);
         assertEq(factory.getMindCount(), 0);
@@ -66,10 +70,11 @@ contract DeploymentTest is Test {
         factory = deployFactory(address(vvvToken), owner);
 
         // Create a mind
+        vm.prank(owner);
+        factory.updateAllowlist(user1, true);
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        address mindAddress = _createMind(factory, 42);
 
-        assertEq(mindId, 1);
         assertTrue(mindAddress != address(0));
         assertEq(factory.getMindCount(), 1);
 
@@ -79,7 +84,7 @@ contract DeploymentTest is Test {
         assertEq(mindContract.factory(), address(factory));
         assertEq(address(mindContract.vvvToken()), address(vvvToken));
 
-        console.log("Mind created with ID:", mindId);
+        console.log("Mind created with number:", uint256(42));
         console.log("Mind deployed at:", mindAddress);
     }
 
@@ -92,10 +97,12 @@ contract DeploymentTest is Test {
         // Mint tokens to user
         vm.prank(owner);
         vvvToken.mint(user1, 1000e18);
+        vm.prank(owner);
+        factory.updateAllowlist(user1, true);
 
         // Create a mind
         vm.prank(user1);
-        (uint256 mindId, address mindAddress) = factory.createMind("Test Mind");
+        address mindAddress = _createMind(factory, 42);
 
         // User deposits VVV tokens
         _depositToMind(user1, mindAddress, 100e18);
@@ -104,16 +111,23 @@ contract DeploymentTest is Test {
         VeniceMind mindContract = VeniceMind(mindAddress);
         assertEq(mindContract.getVVVBalance(), 100e18);
 
-        // Factory owner burns tokens
-        vm.prank(owner);
-        factory.burnFromMind(mindId);
+        // Dedicated burn operator burns tokens
+        vm.prank(burnOperator);
+        factory.burnFromMind(42);
 
         // Verify burn
         assertEq(mindContract.getVVVBalance(), 0);
         assertEq(factory.globalTotalBurned(), 100e18);
-        assertEq(factory.getMindTotalBurned(mindId), 100e18);
+        assertEq(factory.getMindTotalBurned(42), 100e18);
 
         console.log("Full workflow completed successfully");
         console.log("Total burned globally:", factory.globalTotalBurned());
+    }
+
+    function _createMind(VeniceMindFactory target, uint256 number) internal returns (address) {
+        uint256[] memory numbers = new uint256[](1);
+        numbers[0] = number;
+        address[] memory created = target.createMinds(numbers);
+        return created.length == 0 ? address(0) : created[0];
     }
 }
